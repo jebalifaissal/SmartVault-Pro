@@ -2,9 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 class WelcomeScreen extends StatefulWidget {
-  const WelcomeScreen({super.key, required this.onCommencer});
+  const WelcomeScreen({
+    super.key,
+    required this.onCommencer,
+    required this.onAdminLogin,
+  });
 
   final VoidCallback onCommencer;
+  final VoidCallback onAdminLogin;
 
   @override
   State<WelcomeScreen> createState() => _WelcomeScreenState();
@@ -81,7 +86,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [_buildBrand(teal), _buildWelcomeContent(teal)],
+                      children: [
+                        _buildBrand(teal),
+                        _buildWelcomeContent(teal),
+                      ],
                     ),
                   ),
                 );
@@ -112,7 +120,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       color: const Color(0xFF10252D),
       child: Center(
         child: _videoError == null
-            ? const CircularProgressIndicator(color: Color(0xFF18B6A5))
+            ? const CircularProgressIndicator(
+                color: Color(0xFF18B6A5),
+              )
             : Icon(
                 Icons.movie_outlined,
                 color: accent.withValues(alpha: 0.7),
@@ -131,9 +141,15 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           decoration: BoxDecoration(
             color: accent.withValues(alpha: 0.16),
             borderRadius: BorderRadius.circular(15),
-            border: Border.all(color: accent.withValues(alpha: 0.55)),
+            border: Border.all(
+              color: accent.withValues(alpha: 0.55),
+            ),
           ),
-          child: Icon(Icons.shield_rounded, color: accent, size: 27),
+          child: Icon(
+            Icons.shield_rounded,
+            color: accent,
+            size: 27,
+          ),
         ),
         const SizedBox(width: 12),
         const Text(
@@ -157,11 +173,16 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 7,
+            ),
             decoration: BoxDecoration(
               color: accent.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(30),
-              border: Border.all(color: accent.withValues(alpha: 0.6)),
+              border: Border.all(
+                color: accent.withValues(alpha: 0.6),
+              ),
             ),
             child: const Text(
               'VOTRE COFFRE-FORT NUMÉRIQUE',
@@ -206,6 +227,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
             ),
           ],
           const SizedBox(height: 28),
+
+          // Bouton utilisateur
           SizedBox(
             width: double.infinity,
             height: 58,
@@ -225,15 +248,54 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 children: [
                   Text(
                     'Commencer',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   SizedBox(width: 10),
-                  Icon(Icons.arrow_forward_rounded, size: 21),
+                  Icon(
+                    Icons.arrow_forward_rounded,
+                    size: 21,
+                  ),
                 ],
               ),
             ),
           ),
+
           const SizedBox(height: 14),
+
+          // Bouton Administrateur
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: OutlinedButton.icon(
+              onPressed: widget.onAdminLogin,
+              icon: const Icon(
+                Icons.admin_panel_settings_outlined,
+                size: 21,
+              ),
+              label: const Text(
+                'Accès Administrateur',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: BorderSide(
+                  color: accent.withValues(alpha: 0.65),
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
           Center(
             child: Text(
               'Simple • Pratique • Sécurisé',

@@ -1,5 +1,7 @@
+
 import 'package:flutter/material.dart';
 
+import '../features/admin/data/admin_auth_repository.dart';
 import '../features/auth/data/cloudflare_auth_repository.dart';
 import '../features/auth/data/cloudflare_session_store.dart';
 import '../features/auth/presentation/auth_gate.dart';
@@ -12,29 +14,54 @@ class ApplicationBootstrap extends StatefulWidget {
   const ApplicationBootstrap({super.key});
 
   @override
-  State<ApplicationBootstrap> createState() => _ApplicationBootstrapState();
+  State<ApplicationBootstrap> createState() =>
+      _ApplicationBootstrapState();
 }
 
 class _ApplicationBootstrapState extends State<ApplicationBootstrap> {
+  // Normal user authentication
   late final _sessionStore = CloudflareSessionStore();
+
   late final _authRepository = CloudflareAuthRepository(
     sessionStore: _sessionStore,
   );
-  late final _documentsRepository = SqfliteLocalDocumentRepository();
+
+  // Independent Admin authentication
+  late final _adminAuthRepository = AdminAuthRepository();
+
+  // Local documents database
+  late final _documentsRepository =
+      SqfliteLocalDocumentRepository();
+
+  // Normal user API
   late final _documentApi = DocumentApiService(
     getAccessToken: _authRepository.getAccessToken,
-    getCachedAdministrator: _authRepository.getCachedAdministrator,
+    getCachedAdministrator:
+        _authRepository.getCachedAdministrator,
   );
-  late final _documentShareService = DocumentShareService(api: _documentApi);
+
+  // Admin API using the independent Admin token
+  late final _adminDocumentApi = DocumentApiService(
+    getAccessToken: _adminAuthRepository.getAccessToken,
+  );
+
+  late final _documentShareService =
+      DocumentShareService(api: _documentApi);
 
   @override
-  Widget build(BuildContext context) => SmartVaultMaterialApp(
-    home: AuthGate(
-      authRepository: _authRepository,
-      documentsRepository: _documentsRepository,
-      localCinRepository: _documentsRepository,
-      classificationApi: _documentApi,
-      documentShareService: _documentShareService,
-    ),
-  );
+  Widget build(BuildContext context) {
+    return SmartVaultMaterialApp(
+      home: AuthGate(
+        authRepository: _authRepository,
+        documentsRepository: _documentsRepository,
+        localCinRepository: _documentsRepository,
+        classificationApi: _documentApi,
+        documentShareService: _documentShareService,
+
+        // Independent Admin authentication and API
+        adminAuthRepository: _adminAuthRepository,
+        adminApi: _adminDocumentApi,
+      ),
+    );
+  }
 }

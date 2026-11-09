@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
-import '../../auth/domain/auth_user.dart';
+import '../domain/admin_user.dart';
 import '../../../services/document_api_service.dart';
 import '../../documents/domain/classification_request.dart';
 
@@ -36,7 +36,7 @@ class AdminInboxScreen extends StatefulWidget {
   });
 
   final DocumentApiService api;
-  final AuthUser user;
+  final AdminUser user;
   final Future<void> Function() onSignOut;
 
   @override
