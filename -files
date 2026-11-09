@@ -1,0 +1,8 @@
+[33mcommit 6eafb484420a3ce204737262d4cd869d2b6944ac[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m
+Author: Faissal Jebali <EMAIL_GITHUB>
+Date:   Mon Nov 9 15:59:27 2026 +0100
+
+    first commit
+
+ README.md | 92 [32m+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++[m
+ 1 file changed, 92 insertions(+)

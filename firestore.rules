@@ -1,0 +1,122 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /documentShares/{shareId} {
+      allow read, write: if false;
+    }
+
+    match /users/{userId}/documents/{documentId} {
+      function isOwner() {
+        return request.auth != null && request.auth.uid == userId;
+      }
+
+      function hasValidDocumentFields() {
+        return request.resource.data.keys().hasOnly([
+            'title',
+            'category',
+            'holderName',
+            'name',
+            'surname',
+            'documentNumber',
+            'dateOfBirth',
+            'placeOfBirth',
+            'createdAt',
+            'updatedAt',
+            'expiryDate',
+            'expirationDate',
+            'imageStoragePath',
+            'documentType',
+            'fullName',
+            'firstName',
+            'lastName',
+            'cinNumber',
+            'status'
+          ])
+          && request.resource.data.keys().hasAll([
+            'title',
+            'category',
+            'holderName',
+            'documentNumber',
+            'createdAt',
+            'updatedAt',
+            'expiryDate',
+            'imageStoragePath'
+          ])
+          && request.resource.data.title is string
+          && request.resource.data.title.size() <= 120
+          && request.resource.data.holderName is string
+          && request.resource.data.holderName.size() <= 120
+          && (!request.resource.data.keys().hasAny(['documentType'])
+            || request.resource.data.documentType == null
+            || (request.resource.data.documentType is string
+              && request.resource.data.documentType.size() <= 32))
+          && (!request.resource.data.keys().hasAny(['fullName'])
+            || request.resource.data.fullName == null
+            || (request.resource.data.fullName is string
+              && request.resource.data.fullName.size() <= 120))
+          && (!request.resource.data.keys().hasAny(['firstName'])
+            || request.resource.data.firstName == null
+            || (request.resource.data.firstName is string
+              && request.resource.data.firstName.size() <= 80))
+          && (!request.resource.data.keys().hasAny(['lastName'])
+            || request.resource.data.lastName == null
+            || (request.resource.data.lastName is string
+              && request.resource.data.lastName.size() <= 80))
+          && (!request.resource.data.keys().hasAny(['cinNumber'])
+            || request.resource.data.cinNumber == null
+            || (request.resource.data.cinNumber is string
+              && request.resource.data.cinNumber.matches('^[0-9]{8}$')))
+          && (!request.resource.data.keys().hasAny(['status'])
+            || request.resource.data.status == null
+            || request.resource.data.status == 'verified_by_user')
+          && (!request.resource.data.keys().hasAny(['name'])
+            || request.resource.data.name == null
+            || (request.resource.data.name is string
+              && request.resource.data.name.size() <= 80))
+          && (!request.resource.data.keys().hasAny(['surname'])
+            || request.resource.data.surname == null
+            || (request.resource.data.surname is string
+              && request.resource.data.surname.size() <= 80))
+          && request.resource.data.category in [
+            'Pièce d’identité',
+            'Passeport',
+            'Diplôme',
+            'Permis de conduire',
+            'Autres'
+          ]
+          && (request.resource.data.documentNumber == null
+            || (request.resource.data.documentNumber is string
+              && request.resource.data.documentNumber.size() <= 32))
+          && (!request.resource.data.keys().hasAny(['dateOfBirth'])
+            || request.resource.data.dateOfBirth == null
+            || (request.resource.data.dateOfBirth is string
+              && request.resource.data.dateOfBirth.matches(
+                '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+              )))
+          && (!request.resource.data.keys().hasAny(['placeOfBirth'])
+            || request.resource.data.placeOfBirth == null
+            || (request.resource.data.placeOfBirth is string
+              && request.resource.data.placeOfBirth.size() <= 80))
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.updatedAt is timestamp
+          && (request.resource.data.expiryDate == null
+            || request.resource.data.expiryDate is timestamp)
+          && (!request.resource.data.keys().hasAny(['expirationDate'])
+            || request.resource.data.expirationDate == null
+            || request.resource.data.expirationDate is timestamp)
+          && (request.resource.data.imageStoragePath == null
+            || request.resource.data.imageStoragePath is string)
+          && (!request.resource.data.keys().hasAny(['documentType'])
+            || request.resource.data.documentType != 'CIN'
+            || (request.resource.data.category == 'Pièce d’identité'
+              && request.resource.data.status == 'verified_by_user'
+              && request.resource.data.imageStoragePath is string));
+      }
+
+      allow read: if isOwner();
+      allow create, update: if isOwner() && hasValidDocumentFields();
+      allow delete: if isOwner();
+    }
+  }
+}
