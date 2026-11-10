@@ -35,9 +35,9 @@ enum _Step {
 class AuthGate extends StatefulWidget {
   const AuthGate({
     required this.authRepository,
-    required this.adminAuthRepository,
-    required this.adminApi,
     required this.documentsRepository,
+    this.adminAuthRepository,
+    this.adminApi,
     this.localCinRepository,
     this.classificationApi,
     this.documentShareService,
@@ -45,20 +45,15 @@ class AuthGate extends StatefulWidget {
     super.key,
   });
 
-  // Authentification utilisateur
   final AuthRepository authRepository;
 
-  // Authentification Admin indépendante
-  final AdminAuthRepository adminAuthRepository;
+  // Dépendances Admin facultatives pour les tests utilisateur.
+  final AdminAuthRepository? adminAuthRepository;
+  final DocumentApiService? adminApi;
 
-  // API utilisant exclusivement le token Admin
-  final DocumentApiService adminApi;
-
-  // Documents utilisateur
   final DocumentRepository documentsRepository;
   final LocalDocumentRepository? localCinRepository;
 
-  // API utilisateur
   final DocumentApiService? classificationApi;
   final DocumentShareService? documentShareService;
 
@@ -75,9 +70,16 @@ class _AuthGateState extends State<AuthGate> {
 
   @override
   Widget build(BuildContext context) {
-    // Vérification indépendante de la session Admin
+    final adminRepository = widget.adminAuthRepository;
+
+    // Si les dépendances Admin sont absentes,
+    // on utilise directement l'authentification utilisateur.
+    if (adminRepository == null || widget.adminApi == null) {
+      return _buildUserAuthentication();
+    }
+
     return StreamBuilder<AdminUser?>(
-      stream: widget.adminAuthRepository.authStateChanges,
+      stream: adminRepository.authStateChanges,
       builder: (context, adminSnapshot) {
         if (adminSnapshot.hasError) {
           return _errorScreen(
@@ -92,12 +94,10 @@ class _AuthGateState extends State<AuthGate> {
 
         final admin = adminSnapshot.data;
 
-        // Admin connecté → ouverture directe de la boîte de réception
         if (admin != null) {
           return _adminScreen(admin);
         }
 
-        // Pas de session Admin → vérification utilisateur normal
         return _buildUserAuthentication();
       },
     );
@@ -143,6 +143,11 @@ class _AuthGateState extends State<AuthGate> {
             });
           },
           onAdminLogin: () {
+            if (widget.adminAuthRepository == null ||
+                widget.adminApi == null) {
+              return;
+            }
+
             setState(() {
               _step = _Step.adminLogin;
             });
@@ -193,27 +198,44 @@ class _AuthGateState extends State<AuthGate> {
           },
         ),
 
-      _Step.adminLogin => AdminLoginScreen(
-          repository: widget.adminAuthRepository,
-          onBack: () {
-            setState(() {
-              _step = _Step.welcome;
-            });
-          },
-        ),
+      _Step.adminLogin => _buildAdminLogin(),
     };
   }
 
-  // Espace Admin : utilise uniquement AdminUser et adminApi
-  Widget _adminScreen(AdminUser admin) {
-    return AdminInboxScreen(
-      api: widget.adminApi,
-      user: admin,
-      onSignOut: widget.adminAuthRepository.signOut,
+  Widget _buildAdminLogin() {
+    final repository = widget.adminAuthRepository;
+
+    if (repository == null || widget.adminApi == null) {
+      return _buildNavigationSteps();
+    }
+
+    return AdminLoginScreen(
+      repository: repository,
+      onBack: () {
+        setState(() {
+          _step = _Step.welcome;
+        });
+      },
     );
   }
 
-  // Espace utilisateur normal
+  Widget _adminScreen(AdminUser admin) {
+    final api = widget.adminApi;
+    final repository = widget.adminAuthRepository;
+
+    if (api == null || repository == null) {
+      return _errorScreen(
+        'Configuration de l’espace Admin incomplète.',
+      );
+    }
+
+    return AdminInboxScreen(
+      api: api,
+      user: admin,
+      onSignOut: repository.signOut,
+    );
+  }
+
   Widget _authenticatedScreen(AuthUser user) {
     return IdleSessionGate(
       key: ValueKey(user.id),

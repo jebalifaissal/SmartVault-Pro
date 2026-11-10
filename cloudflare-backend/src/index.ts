@@ -1,4 +1,4 @@
-﻿
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
@@ -1166,6 +1166,98 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
         return json({ success: true, requests: result.results });
       }
       // (routes admin traitees avant authenticatedPrincipal)
+      // GET: List all documents
+      if (path === "/api/documents" && request.method === "GET") {
+        const result = await env.smartvault_db
+          .prepare(
+            "SELECT * FROM documents WHERE user_id = ? ORDER BY created_at DESC",
+          )
+          .bind(userId)
+          .all();
+
+        return json({
+          success: true,
+          documents: result.results.map((row) => documentFromRow(row)),
+        });
+      }
+
+      // POST: Add a document
+      if (path === "/api/documents" && request.method === "POST") {
+        let body: unknown;
+
+        try {
+          body = await request.json();
+        } catch {
+          return json({ success: false, error: "Invalid JSON" }, 400);
+        }
+
+        if (!isRecord(body)) {
+          return json({ success: false, error: "Invalid document" }, 400);
+        }
+        const title = nullableString(body.title);
+        const category = nullableString(body.category);
+        const imageStoragePath = nullableString(body.image_storage_path);
+        if (!title || !category) {
+          return json({
+            success: false,
+            error: "Title and category are required",
+          }, 400);
+        }
+
+        if (
+          imageStoragePath &&
+          !imageStoragePath.startsWith(`users/${userId}/documents/`)
+        ) {
+          return json({ success: false, error: "Invalid image path" }, 400);
+        }
+
+        const id = nullableString(body.id) ?? crypto.randomUUID();
+        const fileName =
+          nullableString(body.file_name) ??
+          imageStoragePath?.split("/").pop() ??
+          null;
+        await env.smartvault_db
+          .prepare(
+            `INSERT INTO documents (
+               id, user_id, title, category, file_name, holder_name,
+               document_number, expiry_date, name, surname, date_of_birth,
+               place_of_birth, image_storage_path, document_type, full_name,
+               first_name, last_name, cin_number, expiration_date, updated_at
+             ) VALUES (
+               ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+               CURRENT_TIMESTAMP
+             )`,
+          )
+          .bind(
+            id,
+            userId,
+            title,
+            category,
+            fileName,
+            nullableString(body.holder_name),
+            nullableString(body.document_number),
+            nullableString(body.expiry_date),
+            nullableString(body.name),
+            nullableString(body.surname),
+            nullableString(body.date_of_birth),
+            nullableString(body.place_of_birth),
+            imageStoragePath,
+            nullableString(body.document_type),
+            nullableString(body.full_name),
+            nullableString(body.first_name),
+            nullableString(body.last_name),
+            nullableString(body.cin_number),
+            nullableString(body.expiration_date),
+          )
+          .run();
+
+        const savedDocument = await env.smartvault_db
+          .prepare("SELECT * FROM documents WHERE id = ? AND user_id = ?")
+          .bind(id, userId)
+          .first();
+        if (!savedDocument) {
+          throw new Error("Document insert could not be read back");
+        }
 
         return json({
           success: true,
@@ -1176,6 +1268,7 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
 
       // GET: Find one document by ID
       if (
+        
         path.startsWith("/api/documents/") &&
         request.method === "GET"
       ) {

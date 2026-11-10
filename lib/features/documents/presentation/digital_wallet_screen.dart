@@ -528,7 +528,7 @@ class _DocumentThumbnailState extends State<_DocumentThumbnail> {
 
   void _loadImage() {
     final localPath = widget.document.localImagePath;
-    final path = widget.document.imageStoragePath;
+  
     _imageData = localPath == null ? null : File(localPath).readAsBytes();
   }
 

@@ -207,7 +207,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(18, 8, 18, 30),
       itemCount: docs.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
+    separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final doc = docs[index];
         final imagePath = doc.localImagePath;
@@ -337,7 +337,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(18, 8, 18, 30),
       itemCount: docs.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
+   separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final doc = docs[index];
         final imagePath = doc.localImagePath;
