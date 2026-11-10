@@ -38,7 +38,7 @@ class UserNotification {
         title is! String ||
         body is! String ||
         requestId is! String ||
-        isRead is! bool ||
+               (isRead is! bool && isRead is! int) ||
         createdAt is! int) {
       throw const FormatException('Notification invalide.');
     }
@@ -48,7 +48,7 @@ class UserNotification {
       title: title,
       body: body,
       requestId: requestId,
-      isRead: isRead,
+            isRead: isRead == true || isRead == 1,
       createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt),
       category: data['category'] as String?,
       securityLevel: data['security_level'] as String?,

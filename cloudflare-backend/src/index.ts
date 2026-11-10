@@ -855,19 +855,39 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
           }
           if (!isRecord(body)) return json({ success: false, error: "Invalid decision" }, 400);
           const reqId = decodeURIComponent(path.slice(decPfx.length, -"/decision".length));
-          const decision = body.decision;
+            const decision = body.decision;
           const level = body.security_level;
-          const categoryRaw = nullableString(body.category);
-const category = categoryRaw?.replace(/[\u2018\u2019]/g, "'");
+          const category = nullableString(body.category);
+
           const accepted = decision === "accept";
-          const validHigh = ["Pièce d'identité", "Passeport", "Permis de conduire", "Autres"];
-          const validMedium = ["Diplôme", "Cours", "Notes", "Informations", "Autres"];
+
+          const validHigh = [
+            "Pièce d'identité",
+            "Passeport",
+            "Permis de conduire",
+            "Autres",
+          ];
+
+          const validMedium = [
+            "Diplôme",
+            "Cours",
+            "Notes",
+            "Informations",
+            "Autres",
+          ];
+
           if (
-            (accepted && !((level === "HIGH" && category && validHigh.includes(category)) ||
-              (level === "MEDIUM" && category && validMedium.includes(category)))) ||
+            (accepted &&
+              !(
+                (level === "HIGH" && category !== null && validHigh.includes(category)) ||
+                (level === "MEDIUM" && category !== null && validMedium.includes(category))
+              )) ||
             (!accepted && decision !== "reject")
           ) {
-            return json({ success: false, error: "Invalid security classification" }, 400);
+            return json(
+              { success: false, error: "Invalid security classification" },
+              400,
+            );
           }
           const reqRow = await env.smartvault_db
             .prepare("SELECT user_id, title, status FROM classification_requests WHERE id = ?")
@@ -912,6 +932,68 @@ const category = categoryRaw?.replace(/[\u2018\u2019]/g, "'");
         return json({ success: false, error: "Authentication required" }, 401);
       }
       const { uid: userId, email } = principal;
+
+      // ── User notifications ─────────────────────────────────────────
+
+      if (path === "/api/notifications" && request.method === "GET") {
+        const result = await env.smartvault_db
+          .prepare(
+            `SELECT id, type, title, body, request_id, category,
+                    security_level, is_read, created_at
+             FROM user_notifications
+             WHERE user_id = ?
+             ORDER BY created_at DESC
+             LIMIT 100`,
+          )
+          .bind(userId)
+          .all<{
+            id: string;
+            type: string;
+            title: string;
+            body: string;
+            request_id: string;
+            category: string | null;
+            security_level: string | null;
+            is_read: number;
+            created_at: number;
+          }>();
+
+        const unread = await env.smartvault_db
+          .prepare(
+            `SELECT COUNT(*) AS total
+             FROM user_notifications
+             WHERE user_id = ? AND is_read = 0`,
+          )
+          .bind(userId)
+          .first<{ total: number }>();
+
+        return json({
+          success: true,
+          notifications: result.results.map((row) => ({
+            ...row,
+            is_read: Number(row.is_read) === 1,
+          })),
+          unread_count: Number(unread?.total ?? 0),
+        });
+      }
+
+      if (
+        path === "/api/notifications/read-all" &&
+        request.method === "POST"
+      ) {
+        await env.smartvault_db
+          .prepare(
+            `UPDATE user_notifications
+             SET is_read = 1
+             WHERE user_id = ? AND is_read = 0`,
+          )
+          .bind(userId)
+          .run();
+
+        return json({ success: true });
+      }
+
+      // ── End user notifications ─────────────────────────────────────
 
       if (path === "/api/session" && request.method === "GET") {
         return json({
