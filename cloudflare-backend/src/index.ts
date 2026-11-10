@@ -857,7 +857,8 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
           const reqId = decodeURIComponent(path.slice(decPfx.length, -"/decision".length));
           const decision = body.decision;
           const level = body.security_level;
-          const category = nullableString(body.category);
+          const categoryRaw = nullableString(body.category);
+const category = categoryRaw?.replace(/[\u2018\u2019]/g, "'");
           const accepted = decision === "accept";
           const validHigh = ["Pièce d'identité", "Passeport", "Permis de conduire", "Autres"];
           const validMedium = ["Diplôme", "Cours", "Notes", "Informations", "Autres"];
