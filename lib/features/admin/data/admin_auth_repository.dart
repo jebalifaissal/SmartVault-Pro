@@ -30,38 +30,29 @@ class AdminAuthRepository {
   final http.Client _client;
   final String _baseUrl;
 
-  final StreamController<AdminUser?> _authChanges =
-      StreamController<AdminUser?>.broadcast();
+  // Stream broadcast stable : accepte plusieurs abonnements.
+  late final StreamController<AdminUser?> _authChanges =
+      StreamController<AdminUser?>.broadcast(
+    onListen: () {
+      if (_hasInitialState) {
+        _authChanges.add(_currentAdmin);
+      }
+    },
+  );
 
-  Future<AdminUser?>? _initialSession;
+  // Stream fixe pendant toute la durée de vie du Repository.
+  late final Stream<AdminUser?> _authStateChanges =
+      _authChanges.stream;
+
+  Stream<AdminUser?> get authStateChanges => _authStateChanges;
 
   // Dernier état connu de la session Admin.
   AdminUser? _currentAdmin;
   bool _hasInitialState = false;
 
-  // Stream réutilisable, multi-abonnements et avec état initial.
-  late final Stream<AdminUser?> _authStateChanges =
-      Stream<AdminUser?>.multi(
-    (controller) {
-      // S'abonner d'abord aux changements.
-      final subscription = _authChanges.stream.listen(
-        controller.add,
-        onError: controller.addError,
-        onDone: controller.close,
-      );
-
-      // Envoyer ensuite le dernier état connu.
-      if (_hasInitialState) {
-        controller.add(_currentAdmin);
-      }
-
-      controller.onCancel = subscription.cancel;
-    },
-    isBroadcast: true,
-  );
-
-  /// Stream utilisé par AuthGate.
-  Stream<AdminUser?> get authStateChanges => _authStateChanges;
+  // Permet d'éviter qu'une ancienne restauration
+  // écrase une connexion ou une déconnexion récente.
+  int _authOperationVersion = 0;
 
   /// Met à jour l'état Admin et notifie les abonnés.
   void _publishAuthState(AdminUser? admin) {
@@ -75,15 +66,26 @@ class AdminAuthRepository {
 
   /// Initialise et restaure la session Admin.
   Future<void> _initializeAuthState() async {
+    final operationVersion = _authOperationVersion;
+
     try {
-      final admin = await (_initialSession ??= _restoreSession());
+      final admin = await _restoreSession();
+
+      // Ne pas écraser une opération plus récente.
+      if (operationVersion != _authOperationVersion) {
+        return;
+      }
 
       _publishAuthState(admin);
     } catch (error, stackTrace) {
-      debugPrint('[AdminAuth] Session initialization error: $error');
+      debugPrint(
+        '[AdminAuth] Session initialization error: $error',
+      );
       debugPrintStack(stackTrace: stackTrace);
 
-      _publishAuthState(null);
+      if (operationVersion == _authOperationVersion) {
+        _publishAuthState(null);
+      }
     }
   }
 
@@ -115,7 +117,10 @@ class AdminAuthRepository {
 
       return AdminUser.fromApi(adminData);
     } catch (error) {
-      debugPrint('[AdminAuth] Session restoration failed: $error');
+      debugPrint(
+        '[AdminAuth] Session restoration failed: $error',
+      );
+
       await _clearStorage();
       return null;
     }
@@ -126,6 +131,8 @@ class AdminAuthRepository {
     required String email,
     required String password,
   }) async {
+    final operationVersion = ++_authOperationVersion;
+
     final response = await _request(
       '/api/admin/login',
       method: 'POST',
@@ -158,13 +165,17 @@ class AdminAuthRepository {
       value: admin.email,
     );
 
-    _publishAuthState(admin);
+    if (operationVersion == _authOperationVersion) {
+      _publishAuthState(admin);
+    }
 
     return admin;
   }
 
   /// Déconnexion Admin.
   Future<void> signOut() async {
+    ++_authOperationVersion;
+
     final token = await _storage.read(key: _tokenKey);
 
     try {
@@ -176,7 +187,9 @@ class AdminAuthRepository {
         );
       }
     } catch (error) {
-      debugPrint('[AdminAuth] Logout server error: $error');
+      debugPrint(
+        '[AdminAuth] Logout server error: $error',
+      );
     } finally {
       await _clearStorage();
 
@@ -266,7 +279,8 @@ class AdminAuthRepository {
         switch (code) {
           'Invalid credentials' => 'invalid-credential',
           'Too many login attempts' => 'too-many-requests',
-          'Admin authentication required' => 'requires-recent-login',
+          'Admin authentication required' =>
+            'requires-recent-login',
           _ => 'service-unavailable',
         },
       );
