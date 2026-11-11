@@ -447,12 +447,243 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _dismissNotificationBanner() async {
+    Future<void> _dismissNotificationBanner() async {
     setState(() => _notifBannerDismissed = true);
     try {
       await widget.classificationApi?.markAllNotificationsRead();
     } catch (_) {}
-  }  String get _firstName {
+  }
+
+  Future<void> _openNotifications() async {
+    await _loadNotifications();
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final notifications = _notifications;
+
+        return SafeArea(
+          child: Container(
+            height: MediaQuery.of(sheetContext).size.height * 0.75,
+            padding: const EdgeInsets.all(20),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.notifications_active_rounded,
+                      color: _teal,
+                      size: 25,
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'Mes notifications',
+                        style: TextStyle(
+                          color: _ink,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+                const Divider(),
+                if (notifications.isEmpty)
+                  const Expanded(
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.notifications_off_outlined,
+                            size: 48,
+                            color: _muted,
+                          ),
+                          SizedBox(height: 12),
+                          Text(
+                            'Aucune notification pour le moment',
+                            style: TextStyle(color: _muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: notifications.length,
+                     separatorBuilder: (context, index) =>
+    const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final notification = notifications[index];
+                        final accepted = notification.isAccepted;
+                        final color = accepted
+                            ? _teal
+                            : const Color(0xFFDC2626);
+
+                        final date = notification.createdAt;
+                        final formattedDate =
+                            '${date.day.toString().padLeft(2, '0')}/'
+                            '${date.month.toString().padLeft(2, '0')}/'
+                            '${date.year} '
+                            '${date.hour.toString().padLeft(2, '0')}:'
+                            '${date.minute.toString().padLeft(2, '0')}';
+
+                        return Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: notification.isRead
+                                ? const Color(0xFFF7F9FA)
+                                : const Color(0xFFE8F4F2),
+                            borderRadius: BorderRadius.circular(15),
+                            border: Border.all(
+                              color: color.withValues(alpha: 0.15),
+                            ),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                accepted
+                                    ? Icons.check_circle_rounded
+                                    : Icons.cancel_rounded,
+                                color: color,
+                                size: 25,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      notification.title,
+                                      style: const TextStyle(
+                                        color: _ink,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 5),
+                                    Text(
+                                      notification.body,
+                                      style: const TextStyle(
+                                        color: _muted,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    if (notification.category != null) ...[
+                                      const SizedBox(height: 7),
+                                      Text(
+                                        'Catégorie : ${notification.category}',
+                                        style: const TextStyle(
+                                          color: _teal,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                    if (notification.securityLevel != null)
+                                      Text(
+                                        'Sensibilité : ${notification.securityLevel == 'HIGH' ? 'Très sensible' : 'Moyennement sensible'}',
+                                        style: const TextStyle(
+                                          color: _muted,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    const SizedBox(height: 7),
+                                    Text(
+                                      formattedDate,
+                                      style: const TextStyle(
+                                        color: _muted,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (!notification.isRead)
+                                const Icon(
+                                  Icons.circle,
+                                  color: _teal,
+                                  size: 9,
+                                ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                if (notifications.any((n) => !n.isRead))
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        try {
+                          await widget.classificationApi
+                              ?.markAllNotificationsRead();
+
+                          if (!mounted) return;
+
+                          setState(() {
+                            _notifications = _notifications.map((n) {
+                              return UserNotification(
+                                id: n.id,
+                                type: n.type,
+                                title: n.title,
+                                body: n.body,
+                                requestId: n.requestId,
+                                isRead: true,
+                                createdAt: n.createdAt,
+                                category: n.category,
+                                securityLevel: n.securityLevel,
+                              );
+                            }).toList();
+                            _notifBannerDismissed = true;
+                          });
+
+                          if (sheetContext.mounted) {
+                            Navigator.pop(sheetContext);
+                          }
+                        } catch (_) {
+                          if (sheetContext.mounted) {
+                            ScaffoldMessenger.of(sheetContext).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Impossible de mettre à jour les notifications.',
+                                ),
+                              ),
+                            );
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.done_all_rounded),
+                      label: const Text('Tout marquer comme lu'),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+    String get _firstName {
     final name = widget.user.displayName?.trim();
     if (name == null || name.isEmpty) return 'vous';
     return name.split(RegExp(r'\s+')).first;
@@ -630,7 +861,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _RoundIconButton(
           icon: Icons.notifications_none_rounded,
           label: 'Notifications',
-          onPressed: () => _showComingSoon('Les rappels'),
+          onPressed: _openNotifications,
         ),
         const SizedBox(width: 9),
         PopupMenuButton<String>(
