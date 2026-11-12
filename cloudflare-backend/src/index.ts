@@ -1,6 +1,9 @@
 declare global {
   interface Env {
     FIREBASE_SERVICE_ACCOUNT: string;
+    IMAGEKIT_PRIVATE_KEY: string;
+    IMAGEKIT_PUBLIC_KEY: string;
+    IMAGEKIT_URL_ENDPOINT: string;
   }
 }
 const corsHeaders = {
@@ -529,6 +532,60 @@ function validImage(body: Record<string, unknown>):
   };
 }
 
+async function uploadClassificationImage(
+  env: Env,
+  image: { bytes: Uint8Array; mimeType: string },
+): Promise<string> {
+  const privateKey = env.IMAGEKIT_PRIVATE_KEY;
+
+  if (!privateKey || !env.IMAGEKIT_URL_ENDPOINT) {
+    throw new Error("ImageKit configuration is missing.");
+  }
+
+  const extension = image.mimeType === "image/png" ? "png" : "jpg";
+  const fileName = `classification-${crypto.randomUUID()}.${extension}`;
+
+  const form = new FormData();
+
+  const imageBuffer = image.bytes.buffer.slice(
+    image.bytes.byteOffset,
+    image.bytes.byteOffset + image.bytes.byteLength,
+  ) as ArrayBuffer;
+
+  form.append(
+    "file",
+    new Blob([imageBuffer], { type: image.mimeType }),
+    fileName,
+  );
+  form.append("fileName", fileName);
+  form.append("folder", "/smartvault-classification");
+  form.append("useUniqueFileName", "true");
+  form.append("isPrivateFile", "true");
+
+  const response = await fetch(
+    "https://upload.imagekit.io/api/v1/files/upload",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${btoa(`${privateKey}:`)}`,
+      },
+      body: form,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`ImageKit upload failed: ${response.status}`);
+  }
+
+  const result = await response.json() as Record<string, unknown>;
+
+  if (typeof result.filePath !== "string" || !result.filePath) {
+    throw new Error("ImageKit did not return a valid file path.");
+  }
+
+  return result.filePath;
+}
+
 function documentFromRow(row: Record<string, unknown>) {
   return {
     id: row.id,
@@ -978,14 +1035,101 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
         return json({ success: true, history: result.results });
       }
 
-      {
-        const photoPfx = "/api/admin/classification-requests/";
-        if (path.startsWith(photoPfx) && path.endsWith("/photo") && request.method === "GET") {
-          const adm = await authenticatedAdmin(request, env);
-          if (!adm) return json({ success: false, error: "Admin authentication required" }, 401);
-          return json({ success: false, error: "Classification photo storage is not available." }, 503);
-        }
+
+{
+  const photoPfx = "/api/admin/classification-requests/";
+
+  if (
+    path.startsWith(photoPfx) &&
+    path.endsWith("/photo") &&
+    request.method === "GET"
+  ) {
+    const adm = await authenticatedAdmin(request, env);
+
+    if (!adm) {
+      return json(
+        { success: false, error: "Admin authentication required" },
+        401,
+      );
+    }
+
+    const requestId = path.slice(
+      photoPfx.length,
+      -"/photo".length,
+    );
+
+    if (!requestId || requestId.includes("/")) {
+      return json({ success: false, error: "Invalid request ID" }, 400);
+    }
+
+    const record = await env.smartvault_db
+      .prepare(
+        "SELECT image_key, image_mime_type FROM classification_requests WHERE id = ?",
+      )
+      .bind(requestId)
+      .first<{ image_key: string; image_mime_type: string }>();
+
+    if (!record || !record.image_key) {
+      return json({ success: false, error: "Classification photo not found" }, 404);
+    }
+
+    if (
+      !record.image_key.startsWith("/") ||
+      (record.image_mime_type !== "image/jpeg" &&
+        record.image_mime_type !== "image/png")
+    ) {
+      return json({ success: false, error: "Invalid stored image information" }, 500);
+    }
+
+    try {
+      const expiresAt = Math.floor(Date.now() / 1000) + 60;
+
+      const key = await crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode(env.IMAGEKIT_PRIVATE_KEY),
+        { name: "HMAC", hash: "SHA-1" },
+        false,
+        ["sign"],
+      );
+
+      const signatureBuffer = await crypto.subtle.sign(
+        "HMAC",
+        key,
+        new TextEncoder().encode(`${record.image_key}${expiresAt}`),
+      );
+
+      const signature = Array.from(new Uint8Array(signatureBuffer))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("");
+
+      const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\/+$/, "");
+
+      const imageUrl =
+        `${endpoint}${record.image_key}` +
+        `?ik-t=${expiresAt}&ik-s=${signature}`;
+
+      const imageResponse = await fetch(imageUrl);
+
+      if (!imageResponse.ok) {
+        return json({ success: false, error: "Unable to retrieve image from ImageKit" }, 502);
       }
+
+      return new Response(imageResponse.body, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": record.image_mime_type,
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+          "Content-Disposition": "inline",
+        },
+      });
+    } catch {
+      return json({ success: false, error: "Classification photo retrieval failed" }, 502);
+    }
+  }
+}
+
 
       {
         const decPfx = "/api/admin/classification-requests/";
@@ -1064,6 +1208,36 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
             .bind(crypto.randomUUID(), reqRow.user_id, accepted ? "document_accepted" : "document_rejected",
               notifTitle, notifBody, reqId, accepted ? category : null, accepted ? level : null, Date.now())
             .run();
+                      // Envoyer une notification Push au téléphone de l'utilisateur
+          try {
+            const tokenRows = await env.smartvault_db
+              .prepare(
+                "SELECT token FROM push_notification_tokens WHERE user_id = ?"
+              )
+              .bind(reqRow.user_id)
+              .all<{ token: string }>();
+
+            for (const row of tokenRows.results ?? []) {
+              try {
+                await sendFirebasePush(
+                  env,
+                  row.token,
+                  notifTitle,
+                  notifBody,
+                  {
+                    type: accepted
+                      ? "document_accepted"
+                      : "document_rejected",
+                    request_id: reqId,
+                  },
+                );
+              } catch (error) {
+                console.error("Push notification failed:", error);
+              }
+            }
+          } catch (error) {
+            console.error("Push notification dispatch failed:", error);
+          }
           return json({ success: true, status: decStatus, security_level: accepted ? level : null, category: accepted ? category : null });
         }
       }
@@ -1075,7 +1249,54 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
         return json({ success: false, error: "Authentication required" }, 401);
       }
       const { uid: userId, email } = principal;
+if (path === "/api/push/register" && request.method === "POST") {
+  let body: unknown;
 
+  try {
+    body = await request.json();
+  } catch {
+    return json({ success: false, error: "Invalid JSON" }, 400);
+  }
+
+  if (!isRecord(body)) {
+    return json({ success: false, error: "Invalid token data" }, 400);
+  }
+
+  const token = nullableString(body.token);
+  const platform = body.platform;
+
+  if (
+    !token ||
+    token.length > 4096 ||
+    (platform !== "android" && platform !== "ios")
+  ) {
+    return json({ success: false, error: "Invalid FCM token" }, 400);
+  }
+
+  const now = Date.now();
+
+  await env.smartvault_db
+    .prepare(`
+      INSERT INTO push_notification_tokens
+        (id, user_id, token, platform, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(token) DO UPDATE SET
+        user_id = excluded.user_id,
+        platform = excluded.platform,
+        updated_at = excluded.updated_at
+    `)
+    .bind(
+      crypto.randomUUID(),
+      userId,
+      token,
+      platform,
+      now,
+      now,
+    )
+    .run();
+
+  return json({ success: true, message: "FCM token registered" });
+}
       // ── User notifications ─────────────────────────────────────────
 
       if (path === "/api/notifications" && request.method === "GET") {
@@ -1338,47 +1559,139 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
         return json({ success: true });
       }
 
-      if (path === "/api/classification-requests" && request.method === "POST") {
-        let body: unknown;
-        try {
-          body = await request.json();
-        } catch {
-          return json({ success: false, error: "Invalid JSON" }, 400);
-        }
-        if (!isRecord(body)) {
-          return json({ success: false, error: "Invalid request" }, 400);
-        }
-        const id = nullableString(body.id);
-        const title = nullableString(body.title);
-        const documentType = nullableString(body.document_type);
-        const message =
-          typeof body.message === "string" ? body.message.trim().slice(0, 500) : "";
-        if (!id || id.length > 80 || !title || title.length > 120 || !documentType) {
-          return json({ success: false, error: "Invalid classification request" }, 400);
-        }
-        const existing = await env.smartvault_db
-          .prepare("SELECT user_id, status FROM classification_requests WHERE id = ?")
-          .bind(id)
-          .first<{ user_id: string; status: string }>();
-        if (existing) {
-          if (existing.user_id !== userId) {
-            return json({ success: false, error: "Request already exists" }, 409);
-          }
-          return json({ success: true, status: existing.status });
-        }
 
-        const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-        await env.smartvault_db
-          .prepare(
-            `INSERT INTO classification_requests
-             (id, user_id, user_email, title, message, document_type,
-              image_key, image_mime_type, expires_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          )
-          .bind(id, userId, email, title, message, documentType, "", "", expiresAt)
-          .run();
-        return json({ success: true, status: "PENDING", expires_at: expiresAt }, 201);
-      }
+if (path === "/api/classification-requests" && request.method === "POST") {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ success: false, error: "Invalid JSON" }, 400);
+  }
+
+  if (!isRecord(body)) {
+    return json({ success: false, error: "Invalid request" }, 400);
+  }
+
+  const id = nullableString(body.id);
+  const title = nullableString(body.title);
+  const documentType = nullableString(body.document_type);
+  const message =
+    typeof body.message === "string" ? body.message.trim().slice(0, 500) : "";
+
+  if (!id || id.length > 80 || !title || title.length > 120 || !documentType) {
+    return json({ success: false, error: "Invalid classification request" }, 400);
+  }
+
+  const image = validImage(body);
+  if (!image) {
+    return json({ success: false, error: "Invalid or missing image" }, 400);
+  }
+
+  const existing = await env.smartvault_db
+    .prepare(
+      "SELECT user_id, status, image_key FROM classification_requests WHERE id = ?",
+    )
+    .bind(id)
+    .first<{ user_id: string; status: string; image_key: string }>();
+
+  if (existing && existing.user_id !== userId) {
+    return json({ success: false, error: "Request already exists" }, 409);
+  }
+
+  if (existing && existing.image_key) {
+    return json({ success: true, status: existing.status });
+  }
+
+  const extension = image.mimeType === "image/png" ? "png" : "jpg";
+  const fileName = `classification-${id}.${extension}`;
+
+  const uploadForm = new FormData();
+  uploadForm.append(
+    "file",
+    new Blob([image.bytes], { type: image.mimeType }),
+    fileName,
+  );
+  uploadForm.append("fileName", fileName);
+  uploadForm.append("folder", "/smartvault/classification-requests");
+  uploadForm.append("useUniqueFileName", "true");
+  uploadForm.append("isPrivateFile", "true");
+
+  let uploadResponse: Response;
+  try {
+    uploadResponse = await fetch(
+      "https://upload.imagekit.io/api/v1/files/upload",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${btoa(`${env.IMAGEKIT_PRIVATE_KEY}:`)}`,
+        },
+        body: uploadForm,
+      },
+    );
+  } catch {
+    return json({ success: false, error: "Image upload failed" }, 502);
+  }
+
+  if (!uploadResponse.ok) {
+    return json({ success: false, error: "ImageKit upload failed" }, 502);
+  }
+
+  let uploadResult: unknown;
+  try {
+    uploadResult = await uploadResponse.json();
+  } catch {
+    return json({ success: false, error: "Invalid ImageKit response" }, 502);
+  }
+
+  if (
+    !isRecord(uploadResult) ||
+    typeof uploadResult.filePath !== "string" ||
+    !uploadResult.filePath.startsWith("/")
+  ) {
+    return json({ success: false, error: "ImageKit did not return a valid file path" }, 502);
+  }
+
+  const imageKey = uploadResult.filePath;
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+  if (existing) {
+    await env.smartvault_db
+      .prepare(
+        `UPDATE classification_requests
+         SET image_key = ?, image_mime_type = ?
+         WHERE id = ? AND user_id = ?`,
+      )
+      .bind(imageKey, image.mimeType, id, userId)
+      .run();
+
+    return json({ success: true, status: existing.status });
+  }
+
+  await env.smartvault_db
+    .prepare(
+      `INSERT INTO classification_requests
+       (id, user_id, user_email, title, message, document_type,
+        image_key, image_mime_type, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      id,
+      userId,
+      email,
+      title,
+      message,
+      documentType,
+      imageKey,
+      image.mimeType,
+      expiresAt,
+    )
+    .run();
+
+  return json(
+    { success: true, status: "PENDING", expires_at: expiresAt },
+    201,
+  );
+}
 
       if (path === "/api/classification-requests/mine" && request.method === "GET") {
         const result = await env.smartvault_db
@@ -1494,7 +1807,7 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
 
       // GET: Find one document by ID
       if (
-        
+
         path.startsWith("/api/documents/") &&
         request.method === "GET"
       ) {

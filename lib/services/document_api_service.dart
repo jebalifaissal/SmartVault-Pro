@@ -103,34 +103,43 @@ class DocumentApiService {
     }
   }
 
-  Future<void> submitClassificationRequest({
-    required String id,
-    required String title,
-    required String message,
-    required String documentType,
-  }) async {
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/api/classification-requests'),
-      headers: await _authenticatedHeaders(),
-      body: jsonEncode({
-        'id': id,
-        'title': title,
-        'message': message,
-        'document_type': documentType,
-      }),
-    );
-    if (response.statusCode != 200 && response.statusCode != 201) {
-      _decodeResponse(response, expectedStatusCode: 200);
-      throw StateError('La demande de classification a échoué.');
-    }
-    final data = _decodeResponse(
-      response,
-      expectedStatusCode: response.statusCode,
-    );
-    if (data['success'] != true) {
-      throw const FormatException('Invalid classification request response');
-    }
+
+Future<void> submitClassificationRequest({
+  required String id,
+  required String title,
+  required String message,
+  required String documentType,
+  required Uint8List imageBytes,
+  required String imageMimeType,
+}) async {
+  final response = await _client.post(
+    Uri.parse('$_baseUrl/api/classification-requests'),
+    headers: await _authenticatedHeaders(),
+    body: jsonEncode({
+      'id': id,
+      'title': title,
+      'message': message,
+      'document_type': documentType,
+      'image_base64': base64Encode(imageBytes),
+      'image_mime_type': imageMimeType,
+    }),
+  );
+
+  if (response.statusCode != 200 && response.statusCode != 201) {
+    _decodeResponse(response, expectedStatusCode: 200);
+    throw StateError('La demande de classification a échoué.');
   }
+
+  final data = _decodeResponse(
+    response,
+    expectedStatusCode: response.statusCode,
+  );
+
+  if (data['success'] != true) {
+    throw const FormatException('Invalid classification request response');
+  }
+}
+
 
   Future<List<ClassificationRequest>> getPendingClassificationRequests() async {
     final data = _decodeResponse(
@@ -302,6 +311,7 @@ class DocumentApiService {
     return (notifications: notifications, unreadCount: unreadCount);
   }
 
+
   /// Marque toutes les notifications de l'utilisateur comme lues.
   Future<void> markAllNotificationsRead() async {
     _decodeResponse(
@@ -313,6 +323,30 @@ class DocumentApiService {
     );
   }
 
+  /// Enregistre le token Firebase Cloud Messaging sur Cloudflare.
+  Future<void> registerPushToken({
+    required String token,
+    required String platform,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('$_baseUrl/api/push/register'),
+      headers: await _authenticatedHeaders(),
+      body: jsonEncode({
+        'token': token,
+        'platform': platform,
+      }),
+    );
+
+    final data = _decodeResponse(
+      response,
+      expectedStatusCode: 200,
+    );
+
+    if (data['success'] != true) {
+      throw const FormatException('FCM token registration failed');
+    }
+  }
+
   /// Retourne les 200 dernières entrées du journal admin.
   Future<List<Map<String, dynamic>>> getClassificationHistory() async {
     final data = _decodeResponse(
@@ -322,8 +356,10 @@ class DocumentApiService {
       ),
       expectedStatusCode: 200,
     );
+
     final history = data['history'];
     if (history is! List) return [];
+
     return history
         .whereType<Map<String, dynamic>>()
         .toList(growable: false);
@@ -331,17 +367,24 @@ class DocumentApiService {
 
   List<ClassificationRequest> _parseRequests(Object? value) {
     if (value is! List) {
-      throw const FormatException('Invalid classification requests response');
+      throw const FormatException(
+        'Invalid classification requests response',
+      );
     }
+
     return value
         .map((request) {
           if (request is! Map<String, dynamic>) {
-            throw const FormatException('Invalid classification request');
+            throw const FormatException(
+              'Invalid classification request',
+            );
           }
+
           return ClassificationRequest.fromApi(request);
         })
         .toList(growable: false);
   }
+
 
   Future<Map<String, String>> _authenticatedHeaders() async {
     final token = await _getAccessToken();

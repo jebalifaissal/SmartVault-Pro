@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -297,12 +298,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     try {
-      await api.submitClassificationRequest(
-        id: document.id,
-        title: document.title,
-        message: message,
-        documentType: document.documentType ?? 'UNKNOWN',
-      );
+     await api.submitClassificationRequest(
+  id: document.id,
+  title: document.title,
+  message: message,
+  documentType: document.documentType ?? 'UNKNOWN',
+  imageBytes: imageBytes,
+  imageMimeType: imageMimeType,
+);
+
       await repository.markClassificationRequestSubmitted(
         userId: widget.user.id,
         id: document.id,
@@ -329,19 +333,31 @@ class _HomeScreenState extends State<HomeScreen> {
       var pending = await repository.pendingClassificationRequests(
         widget.user.id,
       );
-      for (final request in pending) {
-        if (request.isSubmitted) continue;
-        await api.submitClassificationRequest(
-          id: request.id,
-          title: request.title,
-          message: request.message,
-          documentType: request.documentType,
-        );
-        await repository.markClassificationRequestSubmitted(
-          userId: widget.user.id,
-          id: request.id,
-        );
-      }
+     for (final request in pending) {
+  if (request.isSubmitted) continue;
+
+  final imageFile = File(request.imagePath);
+
+  if (!await imageFile.exists()) {
+    continue;
+  }
+
+  final imageBytes = await imageFile.readAsBytes();
+
+  await api.submitClassificationRequest(
+    id: request.id,
+    title: request.title,
+    message: request.message,
+    documentType: request.documentType,
+    imageBytes: imageBytes,
+    imageMimeType: request.imageMimeType,
+  );
+
+  await repository.markClassificationRequestSubmitted(
+    userId: widget.user.id,
+    id: request.id,
+  );
+}
 
       pending = await repository.pendingClassificationRequests(widget.user.id);
       if (pending.isEmpty) return;

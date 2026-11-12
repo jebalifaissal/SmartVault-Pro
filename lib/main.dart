@@ -7,8 +7,12 @@ import 'app/application_bootstrap.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Firebase initialization temporarily disabled
-  
+  try {
+    await Firebase.initializeApp();
+    debugPrint('Firebase initialized successfully');
+  } catch (e) {
+    debugPrint('Firebase initialization error: $e');
+  }
 
   runApp(const ApplicationBootstrap());
 }

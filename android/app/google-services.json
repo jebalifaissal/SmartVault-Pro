@@ -1,0 +1,68 @@
+{
+  "project_info": {
+    "project_number": "324760587796",
+    "project_id": "smartvault-8a517",
+    "storage_bucket": "smartvault-8a517.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:324760587796:android:64b97ce2738e8b1839a101",
+        "android_client_info": {
+          "package_name": "com.smart"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "324760587796-ocded029kfg8mb4ocj94jpejp6kd994o.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB1XlnaQGAWLdhBZC4inA-vMtTkdaBEDOs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "324760587796-ocded029kfg8mb4ocj94jpejp6kd994o.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:324760587796:android:3fc6e5a5b37ad51a39a101",
+        "android_client_info": {
+          "package_name": "com.smartVault"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "324760587796-ocded029kfg8mb4ocj94jpejp6kd994o.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB1XlnaQGAWLdhBZC4inA-vMtTkdaBEDOs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "324760587796-ocded029kfg8mb4ocj94jpejp6kd994o.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

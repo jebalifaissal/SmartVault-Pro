@@ -1,4 +1,5 @@
-
+import 'dart:async';
+import '../../../services/push_notification_service.dart';
 import 'package:flutter/material.dart';
 
 import '../../../services/document_api_service.dart';
@@ -66,7 +67,24 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   _Step _step = _Step.welcome;
 
-  bool _wasLoggedIn = false;
+bool _wasLoggedIn = false;
+
+final PushNotificationService _pushNotificationService =
+    PushNotificationService();
+
+String? _pushInitializedForUser;
+
+void _initializePushNotifications(String userId) {
+  final api = widget.classificationApi;
+
+  if (api == null || _pushInitializedForUser == userId) {
+    return;
+  }
+
+  _pushInitializedForUser = userId;
+
+  unawaited(_pushNotificationService.initialize(api));
+}
 
   @override
   Widget build(BuildContext context) {
@@ -236,22 +254,24 @@ class _AuthGateState extends State<AuthGate> {
     );
   }
 
-  Widget _authenticatedScreen(AuthUser user) {
-    return IdleSessionGate(
-      key: ValueKey(user.id),
+ Widget _authenticatedScreen(AuthUser user) {
+  _initializePushNotifications(user.id);
+
+  return IdleSessionGate(
+    key: ValueKey(user.id),
+    authRepository: widget.authRepository,
+    user: user,
+    idleTimeout: widget.idleTimeout,
+    child: HomeScreen(
       authRepository: widget.authRepository,
+      documentsRepository: widget.documentsRepository,
+      localCinRepository: widget.localCinRepository,
+      classificationApi: widget.classificationApi,
+      documentShareService: widget.documentShareService,
       user: user,
-      idleTimeout: widget.idleTimeout,
-      child: HomeScreen(
-        authRepository: widget.authRepository,
-        documentsRepository: widget.documentsRepository,
-        localCinRepository: widget.localCinRepository,
-        classificationApi: widget.classificationApi,
-        documentShareService: widget.documentShareService,
-        user: user,
-      ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _loadingScreen() {
     return const Scaffold(
