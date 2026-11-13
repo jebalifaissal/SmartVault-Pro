@@ -1626,10 +1626,16 @@ if (path === "/api/push/register" && request.method === "POST") {
           return json({ success: false, error: "Invalid share request" }, 400);
         }
 
-        // Local CIN records are intentionally stored only on the user's phone.
-        // The authenticated user supplies the image and fields for this share;
-        // the share row itself is scoped to userId and does not expose any other
-        // user's document data.
+        // Preserve ownership checks for cloud documents. A missing D1 row is
+        // allowed because CIN documents are intentionally stored only on-device;
+        // this request still supplies its own images and fields under userId.
+        const existingDocument = await env.smartvault_db
+          .prepare("SELECT user_id FROM documents WHERE id = ?")
+          .bind(documentId)
+          .first<{ user_id: string | null }>();
+        if (existingDocument && existingDocument.user_id !== userId) {
+          return json({ success: false, error: "Document not found" }, 404);
+        }
         const id = crypto.randomUUID();
         const token = randomToken();
         const now = Date.now();
