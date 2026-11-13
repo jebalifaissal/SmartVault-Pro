@@ -417,12 +417,15 @@ it("creates temporary image shares without exposing another user's cloud documen
 		const otherLogin = await login(otherUser.email, otherUser.password);
 		const otherToken = (await otherLogin.json() as { token: string }).token;
 		const originalFetch = globalThis.fetch;
+		let imageUploadCount = 0;
 		vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
 			const requestUrl = String(input);
 			if (requestUrl === "https://upload.imagekit.io/api/v1/files/upload") {
+				imageUploadCount += 1;
+				const side = imageUploadCount === 1 ? "front" : "back";
 				return new Response(JSON.stringify({
-					filePath: "/smartvault-shares/share-front-test.jpg",
-					fileId: "imagekit-share-front-test",
+					filePath: `/smartvault-shares/share-${side}-test.jpg`,
+					fileId: `imagekit-share-${side}-test`,
 				}), { status: 200, headers: { "Content-Type": "application/json" } });
 			}
 			if (requestUrl.startsWith("https://api.imagekit.io/v1/files/") && init?.method === "DELETE") {
@@ -443,6 +446,8 @@ it("creates temporary image shares without exposing another user's cloud documen
 			fields: { category: "Passeport" },
 			front_image_base64: "AQID",
 			front_image_mime_type: "image/jpeg",
+			back_image_base64: "BAUG",
+			back_image_mime_type: "image/jpeg",
 		};
 		const foreignShare = await SELF.fetch("https://example.com/api/shares", {
 			method: "POST",
@@ -485,8 +490,10 @@ it("creates temporary image shares without exposing another user's cloud documen
 		expect(await openResponse.json()).toMatchObject({
 			success: true,
 			fields: { category: "Passeport" },
-			images: ["front"],
+			images: ["front", "back"],
 		});
+		expect(imageUploadCount).toBe(2);
+
 		const imageResponse = await SELF.fetch("https://example.com/api/shares/image/front", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
@@ -494,6 +501,14 @@ it("creates temporary image shares without exposing another user's cloud documen
 		});
 		expect(imageResponse.status).toBe(200);
 		expect(Array.from(new Uint8Array(await imageResponse.arrayBuffer()))).toEqual([1, 2, 3]);
+
+		const backImageResponse = await SELF.fetch("https://example.com/api/shares/image/back", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ token: shareBody.share.url.split("#")[1] }),
+		});
+		expect(backImageResponse.status).toBe(200);
+		expect(Array.from(new Uint8Array(await backImageResponse.arrayBuffer()))).toEqual([1, 2, 3]);
 
 		const ownerRevoke = await SELF.fetch(
 			`https://example.com/api/shares/${shareBody.share.id}`,
@@ -506,6 +521,12 @@ it("creates temporary image shares without exposing another user's cloud documen
 			body: JSON.stringify({ token: shareBody.share.url.split("#")[1] }),
 		});
 		expect(revokedImage.status).toBe(404);
+		const revokedBackImage = await SELF.fetch("https://example.com/api/shares/image/back", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ token: shareBody.share.url.split("#")[1] }),
+		});
+		expect(revokedBackImage.status).toBe(404);
 		vi.unstubAllGlobals();
 	});
 
