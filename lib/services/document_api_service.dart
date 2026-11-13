@@ -111,7 +111,12 @@ Future<void> submitClassificationRequest({
   required String documentType,
   required Uint8List imageBytes,
   required String imageMimeType,
+  Uint8List? backImageBytes,
+  String? backImageMimeType,
 }) async {
+  if ((backImageBytes == null) != (backImageMimeType == null)) {
+    throw ArgumentError('Les données et le type MIME du Verso doivent être fournis ensemble.');
+  }
   final response = await _client.post(
     Uri.parse('$_baseUrl/api/classification-requests'),
     headers: await _authenticatedHeaders(),
@@ -122,6 +127,10 @@ Future<void> submitClassificationRequest({
       'document_type': documentType,
       'image_base64': base64Encode(imageBytes),
       'image_mime_type': imageMimeType,
+      if (backImageBytes != null && backImageMimeType != null) ...{
+        'back_image_base64': base64Encode(backImageBytes),
+        'back_image_mime_type': backImageMimeType,
+      },
     }),
   );
 
@@ -153,16 +162,24 @@ Future<void> submitClassificationRequest({
   }
 
   Future<Uint8List> getClassificationRequestPhoto(String id) async {
+    return _getClassificationRequestImage(id, 'photo');
+  }
+
+  Future<Uint8List> getClassificationRequestBackPhoto(String id) async {
+    return _getClassificationRequestImage(id, 'back-photo');
+  }
+
+  Future<Uint8List> _getClassificationRequestImage(String id, String side) async {
     final response = await _client.get(
       Uri.parse(
         '$_baseUrl/api/admin/classification-requests/'
-        '${Uri.encodeComponent(id)}/photo',
+        '${Uri.encodeComponent(id)}/$side',
       ),
       headers: await _authenticatedHeaders(),
     );
     if (response.statusCode != 200) {
       _decodeResponse(response, expectedStatusCode: 200);
-      throw StateError('La photo de la demande est indisponible.');
+      throw StateError('La photo $side de la demande est indisponible.');
     }
     return response.bodyBytes;
   }
