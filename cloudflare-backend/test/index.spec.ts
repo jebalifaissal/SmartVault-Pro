@@ -530,6 +530,81 @@ it("creates temporary image shares without exposing another user's cloud documen
 		vi.unstubAllGlobals();
 	});
 
+	it("uploads and exposes both Recto and Verso photos for a classification request", async () => {
+		const user = await createAccount("classification-two-sides@example.com");
+		const admin = await createAccount("classification-two-sides-admin@example.com", true);
+		const userLogin = await login(user.email, user.password);
+		const userToken = (await userLogin.json() as { token: string }).token;
+		const adminLogin = await login(admin.email, admin.password);
+		const adminToken = (await adminLogin.json() as { token: string }).token;
+		const requestId = crypto.randomUUID();
+		const originalFetch = globalThis.fetch;
+		let uploadCount = 0;
+		vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input);
+			if (url === "https://upload.imagekit.io/api/v1/files/upload") {
+				uploadCount += 1;
+				const side = uploadCount === 1 ? "front" : "back";
+				return new Response(JSON.stringify({
+					filePath: `/classification-${side}-${requestId}.jpg`,
+					fileId: `imagekit-${side}-${requestId}`,
+				}), { status: 200, headers: { "Content-Type": "application/json" } });
+			}
+			if (url.startsWith("https://images.example.test/")) {
+				return new Response(new Uint8Array([7, 8, 9]), { status: 200 });
+			}
+			return originalFetch(input, init);
+		}));
+		Object.assign(env, {
+			IMAGEKIT_PRIVATE_KEY: "test-private-key",
+			IMAGEKIT_URL_ENDPOINT: "https://images.example.test",
+		});
+
+		try {
+			const created = await SELF.fetch("https://example.com/api/classification-requests", {
+				method: "POST",
+				headers: {
+					Authorization: authorizationHeader(userToken),
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					id: requestId,
+					title: "Carte nationale d’identité",
+					document_type: "CIN_TUNISIE",
+					image_base64: "AQID",
+					image_mime_type: "image/jpeg",
+					back_image_base64: "BAUG",
+					back_image_mime_type: "image/jpeg",
+				}),
+			});
+			expect(created.status).toBe(201);
+			expect(uploadCount).toBe(2);
+
+			const stored = await env.smartvault_db.prepare(
+				"SELECT image_key, back_image_key, back_image_mime_type FROM classification_requests WHERE id = ?",
+			).bind(requestId).first<{ image_key: string; back_image_key: string; back_image_mime_type: string }>();
+			expect(stored?.image_key).toContain("classification-front");
+			expect(stored?.back_image_key).toContain("classification-back");
+			expect(stored?.back_image_mime_type).toBe("image/jpeg");
+
+			const inbox = await SELF.fetch("https://example.com/api/admin/classification-requests", {
+				headers: { Authorization: authorizationHeader(adminToken) },
+			});
+			expect(inbox.status).toBe(200);
+			const inboxBody = await inbox.json() as { requests: Array<{ id: string; has_back_image: number }> };
+			expect(inboxBody.requests.find((item) => item.id === requestId)?.has_back_image).toBe(1);
+
+			const backPhoto = await SELF.fetch(
+				`https://example.com/api/admin/classification-requests/${requestId}/back-photo`,
+				{ headers: { Authorization: authorizationHeader(adminToken) } },
+			);
+			expect(backPhoto.status).toBe(200);
+			expect(Array.from(new Uint8Array(await backPhoto.arrayBuffer()))).toEqual([7, 8, 9]);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
 	it("keeps classification requests in D1 without photos and logs Admin decisions", async () => {
 		const user = await createAccount("classification-user@example.com");
 		const userLogin = await login(user.email, user.password);
