@@ -284,6 +284,7 @@ class _HomeScreenState extends State<HomeScreen> {
     Uint8List imageBytes,
     String imageMimeType,
     String message,
+    [Uint8List? backImageBytes, String? backImageMimeType]
   ) async {
     final repository = widget.localCinRepository;
     final api = widget.classificationApi;
@@ -301,6 +302,8 @@ class _HomeScreenState extends State<HomeScreen> {
       documentType: document.documentType ?? 'UNKNOWN',
       imageBytes: imageBytes,
       imageMimeType: imageMimeType,
+      backImageBytes: backImageBytes,
+      backImageMimeType: backImageMimeType,
     );
 
     try {
@@ -357,6 +360,10 @@ class _HomeScreenState extends State<HomeScreen> {
           documentType: request.documentType,
           imageBytes: imageBytes,
           imageMimeType: request.imageMimeType,
+          backImageBytes: request.backImagePath == null
+              ? null
+              : await File(request.backImagePath!).readAsBytes(),
+          backImageMimeType: request.backImageMimeType,
         );
 
         await repository.markClassificationRequestSubmitted(
