@@ -766,6 +766,9 @@ class _DocumentShareSectionState extends State<_DocumentShareSection> {
   void initState() {
     super.initState();
     _isLoading = false;
+    // Preselect the available document fields so the QR action is usable
+    // immediately. Users can still uncheck any field before sharing.
+    _selectedFields.addAll(_availableFields.keys);
   }
 
   Map<String, String> get _availableFields {
