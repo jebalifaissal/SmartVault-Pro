@@ -360,10 +360,6 @@ class _HomeScreenState extends State<HomeScreen> {
           documentType: request.documentType,
           imageBytes: imageBytes,
           imageMimeType: request.imageMimeType,
-          backImageBytes: request.backImagePath == null
-              ? null
-              : await File(request.backImagePath!).readAsBytes(),
-          backImageMimeType: request.backImageMimeType,
         );
 
         await repository.markClassificationRequestSubmitted(
