@@ -83,7 +83,7 @@ class _RemindersScreenState extends State<RemindersScreen> {
           SnackBar(
             content: Text(enabled
                 ? 'Rappel désactivé.'
-                : 'Rappel programmé 7 jours avant expiration.'),
+                : 'Rappel programmé.'),
           ),
         );
       }
@@ -148,7 +148,7 @@ class _RemindersScreenState extends State<RemindersScreen> {
                       padding: const EdgeInsets.all(16),
                       children: [
                         const Text(
-                          'Recevez une notification locale 7 jours avant l’expiration de vos documents.',
+                          'Recevez une notification locale avant l’expiration. Le rappel est prévu 7 jours avant, ou plus tôt si la date est proche.',
                           style: TextStyle(color: _muted, height: 1.4),
                         ),
                         const SizedBox(height: 14),
