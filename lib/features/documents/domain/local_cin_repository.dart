@@ -22,7 +22,7 @@ typedef SaveLocalDocument =
       VaultDocument document,
       Uint8List? imageBytes,
       String? imageMimeType,
-      [Uint8List? backImageBytes, String? backImageMimeType],
+      [Uint8List? backImageBytes, String? backImageMimeType]
     );
 
 typedef UpdateLocalDocument =
