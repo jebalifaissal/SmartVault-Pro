@@ -4,7 +4,7 @@ import {
 	waitOnExecutionContext,
 	SELF,
 } from "cloudflare:test";
-import { beforeAll, describe, it, expect } from "vitest";
+import { beforeAll, describe, it, expect, vi } from "vitest";
 import worker, { hashPassword } from "../src/index";
 
 const IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
@@ -98,6 +98,7 @@ beforeAll(async () => {
 			document_id TEXT NOT NULL,
 			token_hash TEXT NOT NULL UNIQUE,
 			fields_json TEXT NOT NULL,
+			images_json TEXT,
 			expires_at INTEGER NOT NULL,
 			created_at INTEGER NOT NULL,
 			revoked_at INTEGER
@@ -401,7 +402,7 @@ describe("SmartVault Worker", () => {
 		expect((await SELF.fetch("https://example.com/api/session", { headers })).status).toBe(401);
 	});
 
-	it("creates and revokes shares only for documents owned by the caller", async () => {
+it("creates temporary image shares without exposing another user's cloud document", async () => {
 		const owner = await createAccount("share-owner@example.com");
 		const otherUser = await createAccount("share-other@example.com");
 		await env.smartvault_db
@@ -415,10 +416,33 @@ describe("SmartVault Worker", () => {
 		const ownerToken = (await ownerLogin.json() as { token: string }).token;
 		const otherLogin = await login(otherUser.email, otherUser.password);
 		const otherToken = (await otherLogin.json() as { token: string }).token;
+		const originalFetch = globalThis.fetch;
+		vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+			const requestUrl = String(input);
+			if (requestUrl === "https://upload.imagekit.io/api/v1/files/upload") {
+				return new Response(JSON.stringify({
+					filePath: "/smartvault-shares/share-front-test.jpg",
+					fileId: "imagekit-share-front-test",
+				}), { status: 200, headers: { "Content-Type": "application/json" } });
+			}
+			if (requestUrl.startsWith("https://api.imagekit.io/v1/files/") && init?.method === "DELETE") {
+				return new Response(null, { status: 204 });
+			}
+			if (requestUrl.startsWith("https://images.example.test/")) {
+				return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+			}
+			return originalFetch(input, init);
+		}));
+		Object.assign(env, {
+			IMAGEKIT_PRIVATE_KEY: "test-imagekit-private-key",
+			IMAGEKIT_URL_ENDPOINT: "https://images.example.test",
+		});
 		const shareRequest = {
 			document_id: "owner-document",
 			duration_minutes: 15,
 			fields: { category: "Passeport" },
+			front_image_base64: "AQID",
+			front_image_mime_type: "image/jpeg",
 		};
 		const foreignShare = await SELF.fetch("https://example.com/api/shares", {
 			method: "POST",
@@ -461,7 +485,28 @@ describe("SmartVault Worker", () => {
 		expect(await openResponse.json()).toMatchObject({
 			success: true,
 			fields: { category: "Passeport" },
+			images: ["front"],
 		});
+		const imageResponse = await SELF.fetch("https://example.com/api/shares/image/front", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ token: shareBody.share.url.split("#")[1] }),
+		});
+		expect(imageResponse.status).toBe(200);
+		expect(Array.from(new Uint8Array(await imageResponse.arrayBuffer()))).toEqual([1, 2, 3]);
+
+		const ownerRevoke = await SELF.fetch(
+			`https://example.com/api/shares/${shareBody.share.id}`,
+			{ method: "DELETE", headers: { Authorization: authorizationHeader(ownerToken) } },
+		);
+		expect(ownerRevoke.status).toBe(200);
+		const revokedImage = await SELF.fetch("https://example.com/api/shares/image/front", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ token: shareBody.share.url.split("#")[1] }),
+		});
+		expect(revokedImage.status).toBe(404);
+		vi.unstubAllGlobals();
 	});
 
 	it("keeps classification requests in D1 without photos and logs Admin decisions", async () => {
