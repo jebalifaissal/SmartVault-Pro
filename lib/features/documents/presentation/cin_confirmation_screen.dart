@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../auth/presentation/session_lock_activity.dart';
+
 import '../domain/local_cin_repository.dart';
 import '../domain/national_id_ocr.dart';
 import '../domain/vault_document.dart';
@@ -179,10 +181,13 @@ class _CinConfirmationScreenState extends State<CinConfirmationScreen> {
 
   Future<void> _captureBackPhoto() async {
     try {
-      final selected = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        maxWidth: 2400,
-        imageQuality: 88,
+      final selected = await SessionLockActivityScope.run(
+        context,
+        () => _imagePicker.pickImage(
+          source: ImageSource.camera,
+          maxWidth: 2400,
+          imageQuality: 88,
+        ),
       );
       if (selected == null || !mounted) return;
       final bytes = await selected.readAsBytes();
