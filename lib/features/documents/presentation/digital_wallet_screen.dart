@@ -631,6 +631,24 @@ class _DocumentDetailsScreen extends StatelessWidget {
                 ),
               ),
             ),
+          if (document.localBackImagePath != null) ...[
+            const SizedBox(height: 12),
+            const Text('Verso', style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.file(
+                File(document.localBackImagePath!),
+                height: 240,
+                width: double.infinity,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => const SizedBox(
+                  height: 190,
+                  child: Center(child: Text('Photo Verso introuvable.')),
+                ),
+              ),
+            ),
+          ],
           if (imagePath == null && document.imageStoragePath != null)
             const Text(
               'La photo de ce document distant n’est pas disponible localement.',
@@ -793,8 +811,7 @@ class _DocumentShareSectionState extends State<_DocumentShareSection> {
             ),
             const SizedBox(height: 5),
             const Text(
-              'Choisissez explicitement les informations à transmettre. '
-              'La photo et le chemin local ne sont jamais partagés.',
+              'Choisissez les informations et les photos Recto/Verso à transmettre. Les images seront accessibles uniquement via ce lien temporaire.',
               style: TextStyle(color: _muted, fontSize: 12, height: 1.4),
             ),
             const SizedBox(height: 12),
@@ -1056,6 +1073,22 @@ class _DocumentShareSectionState extends State<_DocumentShareSection> {
     }
   }
 
+  Future<Uint8List?> _readShareImage(String? path) async {
+    if (path == null || path.isEmpty) return null;
+    final file = File(path);
+    if (!await file.exists()) {
+      throw StateError('Une des photos du document est introuvable sur cet appareil.');
+    }
+    final bytes = await file.readAsBytes();
+    if (bytes.isEmpty || bytes.length > 6 * 1024 * 1024) {
+      throw StateError('Chaque photo doit être valide et peser au maximum 6 Mo.');
+    }
+    return bytes;
+  }
+
+  String _mimeForPath(String path) =>
+      path.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+
   Future<void> _createShare(String displayMode) async {
     if (_isCreating || _selectedFields.isEmpty) return;
     setState(() {
@@ -1072,10 +1105,24 @@ class _DocumentShareSectionState extends State<_DocumentShareSection> {
       if (service == null) {
         throw StateError('Le service de partage Cloudflare est indisponible.');
       }
+      final frontBytes = await _readShareImage(widget.document.localImagePath);
+      final backBytes = await _readShareImage(widget.document.localBackImagePath);
+      if (widget.document.category == 'Pièce d’identité' && backBytes == null) {
+        throw StateError('Ajoutez la photo du Verso de votre CIN avant de créer le QR Code.');
+      }
+      if (frontBytes == null) {
+        throw StateError('La photo Recto du document est introuvable sur cet appareil.');
+      }
       final share = await service.createShare(
         documentId: widget.document.id,
         fields: selected,
         durationMinutes: _durationMinutes,
+        frontImageBytes: frontBytes,
+        frontImageMimeType: _mimeForPath(widget.document.localImagePath!),
+        backImageBytes: backBytes,
+        backImageMimeType: backBytes == null
+            ? null
+            : _mimeForPath(widget.document.localBackImagePath!),
       );
       if (!mounted) return;
       setState(() {
