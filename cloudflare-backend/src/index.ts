@@ -1782,10 +1782,6 @@ if (path === "/api/classification-requests" && request.method === "POST") {
 
   if (!env.IMAGEKIT_PRIVATE_KEY || !env.IMAGEKIT_URL_ENDPOINT) {
     if (existing) {
-      await env.smartvault_db.prepare(
-        `UPDATE classification_requests SET image_key = '', image_mime_type = '',
-          back_image_key = '', back_image_mime_type = '' WHERE id = ? AND user_id = ?`,
-      ).bind(id, userId).run();
       return json({ success: true, status: existing.status });
     }
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
