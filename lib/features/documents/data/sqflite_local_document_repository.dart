@@ -598,7 +598,7 @@ class SqfliteLocalDocumentRepository
           if (oldVersion < 4) {
             await _createPendingClassificationTable(database);
           }
-          if (oldVersion < 5) {
+          if (oldVersion >= 2 && oldVersion < 5) {
             await database.execute('ALTER TABLE $_tableName ADD COLUMN back_image_path TEXT');
           }
         },
