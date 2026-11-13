@@ -1634,7 +1634,7 @@ if (path === "/api/push/register" && request.method === "POST") {
         const token = randomToken();
         const now = Date.now();
         const expiresAt = now + duration * 60 * 1000;
-        let imagesJson: string;
+        let imagesJson = "";
         const uploadedFileIds: string[] = [];
         try {
           const frontUpload = await uploadClassificationImage(env, frontImage!, "/smartvault-shares", "share-front");
