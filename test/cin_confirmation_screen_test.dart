@@ -16,7 +16,7 @@ void main() {
     await tester.pumpWidget(
       SmartVaultMaterialApp(
         home: CinConfirmationScreen(
-          onSaveCin: (document, imageBytes, imageMimeType) async {
+          onSaveCin: (document, imageBytes, imageMimeType, [backImageBytes, backImageMimeType]) async {
             savedDocument = document;
             return document;
           },
