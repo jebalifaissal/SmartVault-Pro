@@ -38,18 +38,36 @@ void main() {
       ),
     );
 
-    expect(find.text('Prénom(s)'), findsOneWidget);
-    final textFields = tester.widgetList<TextField>(find.byType(TextField));
-    expect(textFields.map((field) => field.controller!.text), [
-      'AMINA',
-      'TRABELSI',
-      '12345678',
-      '1990-05-17',
-      'TUNIS',
-    ]);
+    TextField fieldWithLabel(String label) {
+      return tester.widget<TextField>(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is TextField &&
+              widget.decoration?.labelText == label,
+        ),
+      );
+    }
+
+    final firstNameField = fieldWithLabel('Prénom / الإسم');
+    final lastNameField = fieldWithLabel('Nom / اللقب');
+    expect(firstNameField.controller!.text, 'AMINA');
+    expect(lastNameField.controller!.text, 'TRABELSI');
+    expect(fieldWithLabel('Numéro de CIN (8 chiffres) / رقم ب.ت.و')
+        .controller!.text, '12345678');
+    expect(fieldWithLabel('Date de naissance / تاريخ الولادة')
+        .controller!.text, '1990-05-17');
+    expect(fieldWithLabel('Lieu de naissance / مكان الولادة')
+        .controller!.text, 'TUNIS');
     expect(find.text('17/05/2030'), findsOneWidget);
 
-    await tester.enterText(find.byType(TextField).first, 'AMINA MODIFIÉE');
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.labelText == 'Prénom / الإسم',
+      ),
+      'AMINA MODIFIÉE',
+    );
     await tester.ensureVisible(find.text('Oui, confirmer'));
     await tester.tap(find.text('Oui, confirmer'));
     await tester.pumpAndSettle();
