@@ -1635,8 +1635,8 @@ if (path === "/api/push/register" && request.method === "POST") {
         const now = Date.now();
         const expiresAt = now + duration * 60 * 1000;
         let imagesJson: string;
+        const uploadedFileIds: string[] = [];
         try {
-          const uploadedFileIds: string[] = [];
           const frontUpload = await uploadClassificationImage(env, frontImage!, "/smartvault-shares", "share-front");
           uploadedFileIds.push(frontUpload.fileId);
           const images: Record<string, { path: string; fileId: string; mime: string }> = {
@@ -1651,6 +1651,11 @@ if (path === "/api/push/register" && request.method === "POST") {
         } catch (error) {
           console.error("Share image upload failed:", error);
           // Best-effort cleanup if only one side was uploaded.
+          for (const fileId of uploadedFileIds) {
+            try { await deleteImageKitFile(env, fileId); } catch (cleanupError) {
+              console.error("Orphan share image cleanup failed:", cleanupError);
+            }
+          }
           // Access remains denied because no share record is created.
           return json({ success: false, error: "Unable to upload document photos" }, 502);
         }
