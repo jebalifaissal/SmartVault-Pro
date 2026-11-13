@@ -97,18 +97,23 @@ void main() {
     );
   });
 
-  test('deletes the local database row and its image', () async {
+  test('deletes the local database row and both document faces', () async {
+    final backImage = Uint8List.fromList([4, 5, 6]);
     final saved = await repository.saveDocument(
       userId: 'user-a',
       document: _document('cin-delete'),
       imageBytes: Uint8List.fromList([8, 9]),
       imageMimeType: 'image/jpeg',
+      backImageBytes: backImage,
+      backImageMimeType: 'image/jpeg',
     );
 
     await repository.deleteDocument(userId: 'user-a', documentId: saved.id);
 
     expect(await repository.watchDocuments('user-a').first, isEmpty);
     expect(await File(saved.localImagePath!).exists(), isFalse);
+    expect(saved.localBackImagePath, isNotNull);
+    expect(await File(saved.localBackImagePath!).exists(), isFalse);
   });
 
   test('updates a local document without losing its image path', () async {
