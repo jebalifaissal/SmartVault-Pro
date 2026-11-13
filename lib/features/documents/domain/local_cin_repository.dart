@@ -34,6 +34,7 @@ typedef SubmitClassificationRequest =
       Uint8List imageBytes,
       String imageMimeType,
       String message,
+      [Uint8List? backImageBytes, String? backImageMimeType],
     );
 
 class PendingLocalClassification {
@@ -45,6 +46,8 @@ class PendingLocalClassification {
     required this.imagePath,
     required this.imageMimeType,
     required this.isSubmitted,
+    this.backImagePath,
+    this.backImageMimeType,
   });
 
   final String id;
@@ -54,6 +57,8 @@ class PendingLocalClassification {
   final String imagePath;
   final String imageMimeType;
   final bool isSubmitted;
+  final String? backImagePath;
+  final String? backImageMimeType;
 }
 
 abstract interface class LocalDocumentRepository {
@@ -81,6 +86,8 @@ abstract interface class LocalDocumentRepository {
     required String documentType,
     required Uint8List imageBytes,
     required String imageMimeType,
+    Uint8List? backImageBytes,
+    String? backImageMimeType,
   });
 
   Future<List<PendingLocalClassification>> pendingClassificationRequests(
