@@ -695,6 +695,16 @@ class _DecisionSheetState extends State<_DecisionSheet> {
       _level == 'HIGH' ? _highCategories : _medCategories;
 
   @override
+  void initState() {
+    super.initState();
+    final type = widget.request.documentType.toUpperCase();
+    if (!{'CIN', 'PASSPORT', 'DRIVING_LICENSE'}.contains(type)) {
+      _level = 'MEDIUM';
+      _category = _medCategories.first;
+    }
+  }
+
+  @override
   void dispose() {
     _rejectController.dispose();
     _firstNameController.dispose();
