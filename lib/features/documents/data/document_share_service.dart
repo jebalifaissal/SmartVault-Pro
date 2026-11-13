@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../../../services/document_api_service.dart';
 
 class DocumentShareService {
@@ -9,11 +11,19 @@ class DocumentShareService {
     required String documentId,
     required Map<String, String> fields,
     required int durationMinutes,
+    required Uint8List frontImageBytes,
+    required String frontImageMimeType,
+    Uint8List? backImageBytes,
+    String? backImageMimeType,
   }) async {
     final response = await _api.createShare(
       documentId: documentId,
       fields: fields,
       durationMinutes: durationMinutes,
+      frontImageBytes: frontImageBytes,
+      frontImageMimeType: frontImageMimeType,
+      backImageBytes: backImageBytes,
+      backImageMimeType: backImageMimeType,
     );
     return _parseShare(response);
   }
