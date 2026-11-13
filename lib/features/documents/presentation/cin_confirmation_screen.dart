@@ -27,6 +27,7 @@ class CinConfirmationScreen extends StatefulWidget {
     required this.onSaveCin,
     required this.imageBytes,
     this.backImageBytes,
+    this.backImageMimeType,
     required this.imageMimeType,
     required this.ocrResult,
     super.key,
@@ -35,6 +36,7 @@ class CinConfirmationScreen extends StatefulWidget {
   final SaveLocalDocument onSaveCin;
   final Uint8List imageBytes;
   final Uint8List? backImageBytes;
+  final String? backImageMimeType;
   final String imageMimeType;
   final NationalIdOcrResult ocrResult;
 
@@ -70,7 +72,8 @@ class _CinConfirmationScreenState extends State<CinConfirmationScreen> {
   void initState() {
     super.initState();
     _backImageBytes = widget.backImageBytes;
-    _backImageMimeType = widget.backImageBytes == null ? null : 'image/jpeg';
+    _backImageMimeType = widget.backImageMimeType ??
+        (widget.backImageBytes == null ? null : 'image/jpeg');
     final random = Random.secure();
     _documentId = List<int>.generate(
       16,
