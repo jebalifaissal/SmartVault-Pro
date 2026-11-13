@@ -180,12 +180,25 @@ void main() {
         id: 'pending-cin',
         category: 'Pièce d’identité',
         securityLevel: DocumentSecurityLevel.high,
+        firstName: 'Faissal',
+        lastName: 'Jebali',
+        documentNumber: '12345678',
+        dateOfBirth: '2000-01-02',
+        placeOfBirth: 'Gabès',
+        expirationDate: DateTime(2030, 5, 10),
       );
       final documents = await repository.watchDocuments('user-a').first;
 
       expect(documents, hasLength(1));
       expect(approved.id, 'pending-cin');
       expect(approved.securityLevel, DocumentSecurityLevel.high);
+      expect(approved.holderName, 'Faissal Jebali');
+      expect(approved.firstName, 'Faissal');
+      expect(approved.lastName, 'Jebali');
+      expect(approved.cinNumber, '12345678');
+      expect(approved.dateOfBirth, '2000-01-02');
+      expect(approved.placeOfBirth, 'Gabès');
+      expect(approved.expiryDate, DateTime(2030, 5, 10));
       expect(
         approved.classificationStatus,
         DocumentClassificationStatus.adminReviewed,
