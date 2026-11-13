@@ -881,11 +881,11 @@ export default {
         }
         const row = await env.smartvault_db
           .prepare(
-            `SELECT fields_json FROM document_shares
+            `SELECT fields_json, images_json FROM document_shares
              WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?`,
           )
           .bind(await sha256Hex(body.token), Date.now())
-          .first<{ fields_json: string }>();
+          .first<{ fields_json: string; images_json: string | null }>();
         if (!row) {
           return json({ success: false, error: "Share link is expired or revoked" }, 404);
         }
@@ -896,7 +896,7 @@ export default {
         });
       }
 
-      const shareImageMatch = path.match(/^\\/api\\/shares\\/image\\/(front|back)$/);
+      const shareImageMatch = path.match(/^\/api\/shares\/image\/(front|back)$/);
       if (shareImageMatch && request.method === "POST") {
         let body: unknown;
         try { body = await request.json(); } catch {
@@ -964,7 +964,7 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
   .then(async response => {
     const data = await response.json();
     if (!response.ok || !data.success || typeof data.fields !== 'object') throw new Error();
-    status.textContent = 'Ce lien est temporaire. La photo du document n’est pas partagée.';
+    status.textContent = 'Ce lien est temporaire. Les photos Recto et Verso sont protégées et expireront avec le partage.';
     for (const [key, value] of Object.entries(data.fields)) {
       if (typeof value !== 'string' || !labels[key]) continue;
       const label = document.createElement('dt');
