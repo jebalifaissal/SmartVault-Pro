@@ -74,8 +74,12 @@ class DocumentReminderService {
       9,
     ).subtract(Duration(days: daysBefore));
     if (!reminderDate.isAfter(now)) {
-      reminderDate = tz.TZDateTime(tz.local, now.year, now.month, now.day, 9);
-      if (!reminderDate.isAfter(now)) {
+      final oneDayBefore = expiryDay
+          .subtract(const Duration(days: 1))
+          .add(const Duration(hours: 9));
+      if (oneDayBefore.isAfter(now)) {
+        reminderDate = oneDayBefore;
+      } else {
         reminderDate = now.add(const Duration(minutes: 2));
       }
     }
