@@ -1587,6 +1587,7 @@ if (path === "/api/push/register" && request.method === "POST") {
           !documentId ||
           documentId.length > 80 ||
           !frontImage ||
+          ((body.back_image_base64 == null) !== (body.back_image_mime_type == null)) ||
           (body.back_image_base64 != null && !backImage) ||
           typeof duration !== "number" ||
           ![5, 15, 30, 60, 1440].includes(duration) ||
