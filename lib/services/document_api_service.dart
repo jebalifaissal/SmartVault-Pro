@@ -173,12 +173,36 @@ Future<void> submitClassificationRequest({
     String? securityLevel,
     String? category,
     String? rejectionReason,
+    String? firstName,
+    String? lastName,
+    String? documentNumber,
+    String? dateOfBirth,
+    String? placeOfBirth,
+    String? expirationDate,
   }) async {
     final requestBody = <String, String>{'decision': decision};
     if (securityLevel != null) requestBody['security_level'] = securityLevel;
     if (category != null) requestBody['category'] = category;
     if (rejectionReason != null) {
       requestBody['rejection_reason'] = rejectionReason;
+    }
+    if (firstName?.trim().isNotEmpty == true) {
+      requestBody['first_name'] = firstName!.trim();
+    }
+    if (lastName?.trim().isNotEmpty == true) {
+      requestBody['last_name'] = lastName!.trim();
+    }
+    if (documentNumber?.trim().isNotEmpty == true) {
+      requestBody['document_number'] = documentNumber!.trim();
+    }
+    if (dateOfBirth?.trim().isNotEmpty == true) {
+      requestBody['date_of_birth'] = dateOfBirth!.trim();
+    }
+    if (placeOfBirth?.trim().isNotEmpty == true) {
+      requestBody['place_of_birth'] = placeOfBirth!.trim();
+    }
+    if (expirationDate?.trim().isNotEmpty == true) {
+      requestBody['expiration_date'] = expirationDate!.trim();
     }
 
     final response = _decodeResponse(
