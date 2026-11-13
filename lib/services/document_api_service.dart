@@ -250,6 +250,10 @@ Future<void> submitClassificationRequest({
     required String documentId,
     required Map<String, String> fields,
     required int durationMinutes,
+    required Uint8List frontImageBytes,
+    required String frontImageMimeType,
+    Uint8List? backImageBytes,
+    String? backImageMimeType,
   }) async {
     final response = _decodeResponse(
       await _client.post(
@@ -259,6 +263,12 @@ Future<void> submitClassificationRequest({
           'document_id': documentId,
           'fields': fields,
           'duration_minutes': durationMinutes,
+          'front_image_base64': base64Encode(frontImageBytes),
+          'front_image_mime_type': frontImageMimeType,
+          if (backImageBytes != null && backImageMimeType != null) ...{
+            'back_image_base64': base64Encode(backImageBytes),
+            'back_image_mime_type': backImageMimeType,
+          },
         }),
       ),
       expectedStatusCode: 201,
