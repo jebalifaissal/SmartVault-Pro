@@ -15,7 +15,7 @@ class DocumentReminderService {
     tz_data.initializeTimeZones();
     tz.setLocalLocation(tz.getLocation('Africa/Tunis'));
     const settings = InitializationSettings(
-      android: AndroidInitializationSettings('ic_launcher'),
+      android: AndroidInitializationSettings('ic_notification'),
     );
     await _notifications.initialize(settings: settings);
     final android = _notifications.resolvePlatformSpecificImplementation<
