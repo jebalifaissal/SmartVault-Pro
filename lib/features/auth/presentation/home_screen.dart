@@ -389,6 +389,14 @@ class _HomeScreenState extends State<HomeScreen> {
             id: request.id,
             category: category,
             securityLevel: securityLevel,
+            firstName: remote['first_name'] as String?,
+            lastName: remote['last_name'] as String?,
+            documentNumber: remote['document_number'] as String?,
+            dateOfBirth: remote['date_of_birth'] as String?,
+            placeOfBirth: remote['place_of_birth'] as String?,
+            expirationDate: DateTime.tryParse(
+              remote['expiration_date'] as String? ?? '',
+            ),
           );
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
