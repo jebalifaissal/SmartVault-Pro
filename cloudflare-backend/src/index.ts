@@ -1776,8 +1776,22 @@ if (path === "/api/classification-requests" && request.method === "POST") {
     return json({ success: false, error: "Request already exists" }, 409);
   }
 
-  if (existing && existing.user_id !== userId) {
-    return json({ success: false, error: "Request already exists" }, 409);
+  if (!env.IMAGEKIT_PRIVATE_KEY || !env.IMAGEKIT_URL_ENDPOINT) {
+    if (existing) {
+      await env.smartvault_db.prepare(
+        `UPDATE classification_requests SET image_key = '', image_mime_type = '',
+          back_image_key = '', back_image_mime_type = '' WHERE id = ? AND user_id = ?`,
+      ).bind(id, userId).run();
+      return json({ success: true, status: existing.status });
+    }
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await env.smartvault_db.prepare(
+      `INSERT INTO classification_requests
+       (id, user_id, user_email, title, message, document_type,
+        image_key, image_mime_type, back_image_key, back_image_mime_type, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, '', '', '', '', ?)`,
+    ).bind(id, userId, email, title, message, documentType, expiresAt).run();
+    return json({ success: true, status: "PENDING", expires_at: expiresAt }, 201);
   }
 
   let imageKey = existing?.image_key || "";
