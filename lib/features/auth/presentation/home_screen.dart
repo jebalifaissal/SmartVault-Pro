@@ -14,6 +14,8 @@ import '../../documents/domain/vault_document.dart';
 import '../../documents/data/hybrid_national_id_ocr.dart';
 import '../../documents/presentation/add_document_screen.dart';
 import '../../documents/presentation/digital_wallet_screen.dart';
+import '../../documents/presentation/reminders_screen.dart';
+import '../../../services/document_reminder_service.dart';
 import '../../documents/data/document_share_service.dart';
 import '../../../services/document_api_service.dart';
 import 'auth_error_message.dart';
@@ -59,6 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<VaultDocument> _cloudDocuments = [];
   final List<VaultDocument> _localDocuments = [];
   final _documentOcr = HybridNationalIdOcr();
+  final _reminderService = DocumentReminderService();
   StreamSubscription<List<VaultDocument>>? _documentsSubscription;
   StreamSubscription<List<VaultDocument>>? _localCinsSubscription;
   Timer? _classificationSyncTimer;
@@ -452,6 +455,31 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openWallet() => setState(() => _selectedTab = 1);
+
+  void _openIdentityDocuments() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => DigitalWalletScreen(
+          documents: _documents,
+          onAddDocument: _addDocument,
+          onDeleteLocalDocument: _deleteLocalCin,
+          documentShareService: widget.documentShareService,
+          initialCategory: 'Pièce d’identité',
+        ),
+      ),
+    );
+  }
+
+  void _openReminders() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => RemindersScreen(
+          documents: List<VaultDocument>.unmodifiable(_documents),
+          reminderService: _reminderService,
+        ),
+      ),
+    );
+  }
 
   // ── Notifications ──────────────────────────────────────────────────────────
 
@@ -1182,7 +1210,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 width: itemWidth,
                 child: _CategoryCard(
                   category: categories[index],
-                  onTap: _openWallet,
+                  onTap: _openIdentityDocuments,
                 ),
               ),
               if (index < categories.length - 1) const SizedBox(width: 10),
@@ -1316,7 +1344,11 @@ class _HomeScreenState extends State<HomeScreen> {
           _addDocument();
           return;
         }
-        _showComingSoon(index == 3 ? 'Les rappels' : 'Le profil');
+        if (index == 3) {
+          _openReminders();
+          return;
+        }
+        _showComingSoon('Le profil');
       },
       destinations: const [
         NavigationDestination(
