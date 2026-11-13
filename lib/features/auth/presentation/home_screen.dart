@@ -260,6 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
     VaultDocument document,
     Uint8List? imageBytes,
     String? imageMimeType,
+    [Uint8List? backImageBytes, String? backImageMimeType]
   ) {
     final repository = widget.localCinRepository;
     if (repository == null) {
@@ -273,6 +274,8 @@ class _HomeScreenState extends State<HomeScreen> {
       document: document,
       imageBytes: imageBytes,
       imageMimeType: imageMimeType,
+      backImageBytes: backImageBytes,
+      backImageMimeType: backImageMimeType,
     );
   }
 
