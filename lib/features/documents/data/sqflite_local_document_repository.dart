@@ -42,6 +42,8 @@ class SqfliteLocalDocumentRepository
     required VaultDocument document,
     Uint8List? imageBytes,
     String? imageMimeType,
+    Uint8List? backImageBytes,
+    String? backImageMimeType,
   }) async {
     if (userId.trim().isEmpty || document.id.trim().isEmpty) {
       throw ArgumentError(
@@ -58,6 +60,15 @@ class SqfliteLocalDocumentRepository
     }
     if (imageBytes != null && imageBytes.isEmpty) {
       throw ArgumentError.value(imageBytes, 'imageBytes', 'La photo est vide.');
+    }
+    if ((backImageBytes == null) != (backImageMimeType == null)) {
+      throw ArgumentError('Données Verso et type MIME doivent être fournis ensemble.');
+    }
+    if (backImageBytes != null && backImageBytes.isEmpty) {
+      throw ArgumentError.value(backImageBytes, 'backImageBytes', 'La photo Verso est vide.');
+    }
+    if (backImageMimeType != null && backImageMimeType != 'image/jpeg' && backImageMimeType != 'image/png') {
+      throw ArgumentError.value(backImageMimeType, 'backImageMimeType', 'Seules les images JPEG et PNG sont acceptées.');
     }
     if (imageMimeType != null &&
         imageMimeType != 'image/jpeg' &&
@@ -88,6 +99,7 @@ class SqfliteLocalDocumentRepository
     if (existing.isNotEmpty) return _fromDatabase(existing.first);
 
     File? copiedImage;
+    File? copiedBackImage;
     if (imageBytes != null && imageMimeType != null) {
       try {
         final root = await _documentsDirectoryProvider();
@@ -119,8 +131,33 @@ class SqfliteLocalDocumentRepository
       }
     }
 
+    if (backImageBytes != null && backImageMimeType != null) {
+      try {
+        final root = await _documentsDirectoryProvider();
+        final userDirectory = Directory(
+          '${root.path}${Platform.pathSeparator}documents'
+          '${Platform.pathSeparator}${Uri.encodeComponent(userId)}',
+        );
+        await userDirectory.create(recursive: true);
+        final extension = backImageMimeType == 'image/png' ? 'png' : 'jpg';
+        copiedBackImage = File(
+          '${userDirectory.path}${Platform.pathSeparator}'
+          '${Uri.encodeComponent(document.id)}_verso.$extension',
+        );
+        await copiedBackImage.writeAsBytes(backImageBytes, flush: true);
+      } on FileSystemException catch (error) {
+        Object? cleanupError;
+        try {
+          if (copiedImage != null && await copiedImage.exists()) await copiedImage.delete();
+          if (copiedBackImage != null && await copiedBackImage.exists()) await copiedBackImage.delete();
+        } on FileSystemException catch (failure) { cleanupError = failure; }
+        throw LocalCinException(stage: LocalCinSaveStage.imageCopy, cause: error, rollbackError: cleanupError);
+      }
+    }
+
     final savedDocument = document.copyWith(
       localImagePath: copiedImage?.path,
+      localBackImagePath: copiedBackImage?.path,
       isLocal: true,
       updatedAt: DateTime.now(),
     );
@@ -134,6 +171,7 @@ class SqfliteLocalDocumentRepository
     } on DatabaseException catch (error) {
       try {
         if (copiedImage != null) await copiedImage.delete();
+        if (copiedBackImage != null) await copiedBackImage.delete();
       } on FileSystemException catch (cleanupError) {
         throw LocalCinException(
           stage: LocalCinSaveStage.databaseWrite,
@@ -185,6 +223,9 @@ class SqfliteLocalDocumentRepository
           localImagePath:
               document.localImagePath ??
               existing.first['image_path'] as String?,
+          localBackImagePath:
+              document.localBackImagePath ??
+              existing.first['back_image_path'] as String?,
           isLocal: true,
           updatedAt: DateTime.now(),
         );
@@ -552,6 +593,9 @@ class SqfliteLocalDocumentRepository
           if (oldVersion < 4) {
             await _createPendingClassificationTable(database);
           }
+          if (oldVersion < 5) {
+            await database.execute('ALTER TABLE $_tableName ADD COLUMN back_image_path TEXT');
+          }
         },
       ),
     );
@@ -649,6 +693,7 @@ class SqfliteLocalDocumentRepository
       place_of_birth TEXT,
       expiry_date TEXT,
       image_path TEXT,
+      back_image_path TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       status TEXT,
@@ -682,6 +727,7 @@ class SqfliteLocalDocumentRepository
     'expiry_date': (document.expirationDate ?? document.expiryDate)
         ?.toIso8601String(),
     'image_path': document.localImagePath,
+    'back_image_path': document.localBackImagePath,
     'created_at': document.createdAt.toIso8601String(),
     'updated_at': (document.updatedAt ?? document.createdAt).toIso8601String(),
     'status': document.status,
@@ -722,6 +768,7 @@ class SqfliteLocalDocumentRepository
       expirationDate: expiryDate == null ? null : DateTime.parse(expiryDate),
       expiryDate: expiryDate == null ? null : DateTime.parse(expiryDate),
       localImagePath: row['image_path'] as String?,
+      localBackImagePath: row['back_image_path'] as String?,
       isLocal: true,
       name: firstName,
       surname: lastName,
