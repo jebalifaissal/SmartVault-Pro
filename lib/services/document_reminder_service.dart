@@ -48,21 +48,28 @@ class DocumentReminderService {
     if (expiry == null) {
       throw StateError('Ce document ne possède pas de date d’expiration.');
     }
-    final now = DateTime.now();
-    if (!DateTime(expiry.year, expiry.month, expiry.day).isAfter(
-      DateTime(now.year, now.month, now.day),
+    final now = tz.TZDateTime.now(tz.local);
+    final expiryDay = tz.TZDateTime(
+      tz.local,
+      expiry.year,
+      expiry.month,
+      expiry.day,
+    );
+    if (!expiryDay.isAfter(
+      tz.TZDateTime(tz.local, now.year, now.month, now.day),
     )) {
       throw StateError('Ce document est déjà expiré.');
     }
 
-    var reminderDate = DateTime(
+    var reminderDate = tz.TZDateTime(
+      tz.local,
       expiry.year,
       expiry.month,
       expiry.day,
       9,
     ).subtract(Duration(days: daysBefore));
     if (!reminderDate.isAfter(now)) {
-      reminderDate = DateTime(now.year, now.month, now.day, 9);
+      reminderDate = tz.TZDateTime(tz.local, now.year, now.month, now.day, 9);
       if (!reminderDate.isAfter(now)) {
         reminderDate = now.add(const Duration(minutes: 2));
       }
@@ -74,7 +81,7 @@ class DocumentReminderService {
       id: id,
       title: 'Rappel SmartVault Pro',
       body: 'Le document « ${document.title} » expire le ${_formatDate(expiry)}.',
-      scheduledDate: tz.TZDateTime.from(reminderDate, tz.local),
+      scheduledDate: reminderDate,
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           'document_expiry_reminders',
