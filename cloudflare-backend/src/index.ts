@@ -535,6 +535,8 @@ function validImage(body: Record<string, unknown>):
 async function uploadClassificationImage(
   env: Env,
   image: { bytes: Uint8Array; mimeType: string },
+  folder = "/smartvault-classification",
+  prefix = "classification",
 ): Promise<string> {
   const privateKey = env.IMAGEKIT_PRIVATE_KEY;
 
@@ -543,7 +545,7 @@ async function uploadClassificationImage(
   }
 
   const extension = image.mimeType === "image/png" ? "png" : "jpg";
-  const fileName = `classification-${crypto.randomUUID()}.${extension}`;
+  const fileName = `${prefix}-${crypto.randomUUID()}.${extension}`;
 
   const form = new FormData();
 
@@ -558,7 +560,7 @@ async function uploadClassificationImage(
     fileName,
   );
   form.append("fileName", fileName);
-  form.append("folder", "/smartvault-classification");
+  form.append("folder", folder);
   form.append("useUniqueFileName", "true");
   form.append("isPrivateFile", "true");
 
@@ -887,7 +889,62 @@ export default {
         if (!row) {
           return json({ success: false, error: "Share link is expired or revoked" }, 404);
         }
-        return json({ success: true, fields: JSON.parse(row.fields_json) });
+        return json({
+          success: true,
+          fields: JSON.parse(row.fields_json),
+          images: row.images_json ? Object.keys(JSON.parse(row.images_json)) : [],
+        });
+      }
+
+      const shareImageMatch = path.match(/^\\/api\\/shares\\/image\\/(front|back)$/);
+      if (shareImageMatch && request.method === "POST") {
+        let body: unknown;
+        try { body = await request.json(); } catch {
+          return json({ success: false, error: "Invalid JSON" }, 400);
+        }
+        if (!isRecord(body) || typeof body.token !== "string" || body.token.length > 128) {
+          return json({ success: false, error: "Invalid share link" }, 400);
+        }
+        const share = await env.smartvault_db.prepare(
+          `SELECT images_json FROM document_shares
+           WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?`,
+        ).bind(await sha256Hex(body.token), Date.now())
+          .first<{ images_json: string | null }>();
+        if (!share?.images_json) return json({ success: false, error: "Shared image unavailable" }, 404);
+        const images = JSON.parse(share.images_json) as Record<string, { path: string; mime: string }>;
+        const image = images[shareImageMatch[1]];
+        if (!image || typeof image.path !== "string" || !image.path.startsWith("/") ||
+            (image.mime !== "image/jpeg" && image.mime !== "image/png")) {
+          return json({ success: false, error: "Shared image unavailable" }, 404);
+        }
+        try {
+          const expiresAt = Math.floor(Date.now() / 1000) + 60;
+          const key = await crypto.subtle.importKey(
+            "raw", new TextEncoder().encode(env.IMAGEKIT_PRIVATE_KEY),
+            { name: "HMAC", hash: "SHA-1" }, false, ["sign"],
+          );
+          const signatureBuffer = await crypto.subtle.sign(
+            "HMAC", key, new TextEncoder().encode(`${image.path}${expiresAt}`),
+          );
+          const signature = Array.from(new Uint8Array(signatureBuffer))
+            .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+          const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\\/+$/, "");
+          const imageResponse = await fetch(
+            `${endpoint}${image.path}?ik-t=${expiresAt}&ik-s=${signature}`,
+          );
+          if (!imageResponse.ok) return json({ success: false, error: "Image retrieval failed" }, 502);
+          return new Response(imageResponse.body, {
+            headers: {
+              ...corsHeaders,
+              "Content-Type": image.mime,
+              "Cache-Control": "no-store, private",
+              "X-Content-Type-Options": "nosniff",
+              "Content-Disposition": "inline",
+            },
+          });
+        } catch {
+          return json({ success: false, error: "Image retrieval failed" }, 502);
+        }
       }
 
       if (path === "/share" && request.method === "GET") {
@@ -896,7 +953,7 @@ export default {
 <html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>Document partagé · SmartVault Pro</title>
 <style>body{font:16px system-ui,sans-serif;max-width:640px;margin:12vh auto;padding:24px;color:#172b3a;background:#f4f7f7}main{background:white;padding:24px;border-radius:16px}dt{font-weight:700;margin-top:14px}dd{margin:4px 0;color:#526870}</style>
-<main><h1>Informations partagées</h1><p id="status">Vérification du lien…</p><dl id="fields"></dl></main>
+<main><h1>Document partagé</h1><p id="status">Vérification du lien…</p><dl id="fields"></dl><section id="photos"></section></main>
 <script>
 const status = document.getElementById('status');
 const fields = document.getElementById('fields');
@@ -916,6 +973,19 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
       item.textContent = value;
       fields.append(label, item);
     }
+    for (const side of ['front', 'back']) {
+      if (!Array.isArray(data.images) || !data.images.includes(side)) continue;
+      const heading = document.createElement('h2');
+      heading.textContent = side === 'front' ? 'Recto' : 'Verso';
+      const image = document.createElement('img');
+      image.alt = heading.textContent;
+      image.style.cssText = 'display:block;width:100%;height:auto;max-height:420px;object-fit:contain;margin:8px 0 20px;border:1px solid #e5ebeb;border-radius:12px';
+      photos.append(heading, image);
+      fetch('/api/shares/image/' + side, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})})
+        .then(response => { if (!response.ok) throw new Error(); return response.blob(); })
+        .then(blob => { image.src = URL.createObjectURL(blob); })
+        .catch(() => { image.alt = 'Photo indisponible ou partage expiré'; });
+    }
   })
   .catch(() => { status.textContent = 'Ce lien est invalide, révoqué ou expiré.'; });
 </script></html>`,
@@ -925,7 +995,7 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
               "Content-Type": "text/html; charset=utf-8",
               "Cache-Control": "no-store",
               "Content-Security-Policy":
-                "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+                "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; img-src blob:; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
               "Referrer-Policy": "no-referrer",
               "X-Content-Type-Options": "nosniff",
             },
@@ -1492,6 +1562,16 @@ if (path === "/api/push/register" && request.method === "POST") {
         const documentId = nullableString(body.document_id);
         const duration = body.duration_minutes;
         const fields = body.fields;
+        const frontImage = validImage({
+          image_base64: body.front_image_base64,
+          image_mime_type: body.front_image_mime_type,
+        });
+        const backImage = body.back_image_base64 == null && body.back_image_mime_type == null
+          ? null
+          : validImage({
+              image_base64: body.back_image_base64,
+              image_mime_type: body.back_image_mime_type,
+            });
         const allowedFields = new Set([
           "category",
           "holderName",
@@ -1505,6 +1585,8 @@ if (path === "/api/push/register" && request.method === "POST") {
         if (
           !documentId ||
           documentId.length > 80 ||
+          !frontImage ||
+          (body.back_image_base64 != null && !backImage) ||
           typeof duration !== "number" ||
           ![5, 15, 30, 60, 1440].includes(duration) ||
           !isRecord(fields) ||
@@ -1533,11 +1615,26 @@ if (path === "/api/push/register" && request.method === "POST") {
         const token = randomToken();
         const now = Date.now();
         const expiresAt = now + duration * 60 * 1000;
+        let imagesJson: string;
+        try {
+          const frontPath = await uploadClassificationImage(env, frontImage!, "/smartvault-shares", "share-front");
+          const images: Record<string, { path: string; mime: string }> = {
+            front: { path: frontPath, mime: frontImage!.mimeType },
+          };
+          if (backImage) {
+            const backPath = await uploadClassificationImage(env, backImage, "/smartvault-shares", "share-back");
+            images.back = { path: backPath, mime: backImage.mimeType };
+          }
+          imagesJson = JSON.stringify(images);
+        } catch (error) {
+          console.error("Share image upload failed:", error);
+          return json({ success: false, error: "Unable to upload document photos" }, 502);
+        }
         await env.smartvault_db
           .prepare(
             `INSERT INTO document_shares
-             (id, user_id, document_id, token_hash, fields_json, expires_at, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             (id, user_id, document_id, token_hash, fields_json, images_json, expires_at, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .bind(
             id,
@@ -1552,6 +1649,7 @@ if (path === "/api/push/register" && request.method === "POST") {
                 ]),
               ),
             ),
+            imagesJson,
             expiresAt,
             now,
           )
