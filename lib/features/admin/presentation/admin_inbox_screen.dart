@@ -95,6 +95,12 @@ class _AdminInboxScreenState extends State<AdminInboxScreen>
         securityLevel: decision.level,
         category: decision.category,
         rejectionReason: decision.rejectionReason,
+        firstName: decision.firstName,
+        lastName: decision.lastName,
+        documentNumber: decision.documentNumber,
+        dateOfBirth: decision.dateOfBirth,
+        placeOfBirth: decision.placeOfBirth,
+        expirationDate: decision.expirationDate,
       );
       await _refresh();
       if (mounted) {
@@ -663,6 +669,12 @@ class _DecisionSheetState extends State<_DecisionSheet> {
   String _level = 'HIGH';
   String _category = 'Pi\u00e8ce d\u2019identit\u00e9';
   final _rejectController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _documentNumberController = TextEditingController();
+  final _dateOfBirthController = TextEditingController();
+  final _placeOfBirthController = TextEditingController();
+  final _expirationDateController = TextEditingController();
   bool _showRejectField = false;
 
   static const _highCategories = [
@@ -685,6 +697,12 @@ class _DecisionSheetState extends State<_DecisionSheet> {
   @override
   void dispose() {
     _rejectController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _documentNumberController.dispose();
+    _dateOfBirthController.dispose();
+    _placeOfBirthController.dispose();
+    _expirationDateController.dispose();
     super.dispose();
   }
 
@@ -892,6 +910,74 @@ class _DecisionSheetState extends State<_DecisionSheet> {
                     if (value != null) setState(() => _category = value);
                   },
                 ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Informations du document (à vérifier sur la photo)',
+                  style: TextStyle(
+                    color: _ink,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _firstNameController,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Prénom',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _lastNameController,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Nom',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _documentNumberController,
+                  decoration: const InputDecoration(
+                    labelText: 'Numéro CIN / document',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _dateOfBirthController,
+                  keyboardType: TextInputType.datetime,
+                  decoration: const InputDecoration(
+                    labelText: 'Date de naissance (AAAA-MM-JJ)',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _placeOfBirthController,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Lieu de naissance',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _expirationDateController,
+                  keyboardType: TextInputType.datetime,
+                  decoration: const InputDecoration(
+                    labelText: 'Date d’expiration (AAAA-MM-JJ)',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
                 const SizedBox(height: 20),
 
                 // Bouton Accepter
@@ -904,6 +990,12 @@ class _DecisionSheetState extends State<_DecisionSheet> {
                         accept: true,
                         level: _level,
                         category: _category,
+                        firstName: _firstNameController.text.trim(),
+                        lastName: _lastNameController.text.trim(),
+                        documentNumber: _documentNumberController.text.trim(),
+                        dateOfBirth: _dateOfBirthController.text.trim(),
+                        placeOfBirth: _placeOfBirthController.text.trim(),
+                        expirationDate: _expirationDateController.text.trim(),
                       ),
                     ),
                     icon: const Icon(Icons.check_circle_outline_rounded),
@@ -1130,12 +1222,24 @@ class _AdminDecision {
     this.level,
     this.category,
     this.rejectionReason,
+    this.firstName,
+    this.lastName,
+    this.documentNumber,
+    this.dateOfBirth,
+    this.placeOfBirth,
+    this.expirationDate,
   });
 
   final bool accept;
   final String? level;
   final String? category;
   final String? rejectionReason;
+  final String? firstName;
+  final String? lastName;
+  final String? documentNumber;
+  final String? dateOfBirth;
+  final String? placeOfBirth;
+  final String? expirationDate;
 }
 
 
