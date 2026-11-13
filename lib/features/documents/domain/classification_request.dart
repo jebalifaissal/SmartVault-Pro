@@ -6,6 +6,7 @@ class ClassificationRequest {
     required this.documentType,
     required this.createdAt,
     this.message,
+    this.hasBackImage = false,
   });
 
   final String id;
@@ -14,6 +15,7 @@ class ClassificationRequest {
   final String documentType;
   final DateTime createdAt;
   final String? message;
+  final bool hasBackImage;
 
   factory ClassificationRequest.fromApi(Map<String, dynamic> data) {
     final id = data['id'];
@@ -22,6 +24,8 @@ class ClassificationRequest {
     final documentType = data['document_type'];
     final createdAt = data['created_at'];
     final message = data['message'];
+    final rawHasBackImage = data['has_back_image'];
+    final hasBackImage = rawHasBackImage == true || rawHasBackImage == 1;
     if (id is! String ||
         userEmail is! String ||
         title is! String ||
@@ -38,6 +42,7 @@ class ClassificationRequest {
       documentType: documentType,
       createdAt: DateTime.parse(createdAt),
       message: message as String?,
+      hasBackImage: hasBackImage,
     );
   }
 }

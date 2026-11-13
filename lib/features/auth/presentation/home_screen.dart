@@ -14,6 +14,8 @@ import '../../documents/domain/vault_document.dart';
 import '../../documents/data/hybrid_national_id_ocr.dart';
 import '../../documents/presentation/add_document_screen.dart';
 import '../../documents/presentation/digital_wallet_screen.dart';
+import '../../documents/presentation/reminders_screen.dart';
+import '../../../services/document_reminder_service.dart';
 import '../../documents/data/document_share_service.dart';
 import '../../../services/document_api_service.dart';
 import 'auth_error_message.dart';
@@ -59,6 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<VaultDocument> _cloudDocuments = [];
   final List<VaultDocument> _localDocuments = [];
   final _documentOcr = HybridNationalIdOcr();
+  final _reminderService = DocumentReminderService();
   StreamSubscription<List<VaultDocument>>? _documentsSubscription;
   StreamSubscription<List<VaultDocument>>? _localCinsSubscription;
   Timer? _classificationSyncTimer;
@@ -257,6 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
     VaultDocument document,
     Uint8List? imageBytes,
     String? imageMimeType,
+    [Uint8List? backImageBytes, String? backImageMimeType]
   ) {
     final repository = widget.localCinRepository;
     if (repository == null) {
@@ -270,6 +274,8 @@ class _HomeScreenState extends State<HomeScreen> {
       document: document,
       imageBytes: imageBytes,
       imageMimeType: imageMimeType,
+      backImageBytes: backImageBytes,
+      backImageMimeType: backImageMimeType,
     );
   }
 
@@ -278,6 +284,7 @@ class _HomeScreenState extends State<HomeScreen> {
     Uint8List imageBytes,
     String imageMimeType,
     String message,
+    [Uint8List? backImageBytes, String? backImageMimeType]
   ) async {
     final repository = widget.localCinRepository;
     final api = widget.classificationApi;
@@ -295,17 +302,21 @@ class _HomeScreenState extends State<HomeScreen> {
       documentType: document.documentType ?? 'UNKNOWN',
       imageBytes: imageBytes,
       imageMimeType: imageMimeType,
+      backImageBytes: backImageBytes,
+      backImageMimeType: backImageMimeType,
     );
 
     try {
-     await api.submitClassificationRequest(
-  id: document.id,
-  title: document.title,
-  message: message,
-  documentType: document.documentType ?? 'UNKNOWN',
-  imageBytes: imageBytes,
-  imageMimeType: imageMimeType,
-);
+      await api.submitClassificationRequest(
+        id: document.id,
+        title: document.title,
+        message: message,
+        documentType: document.documentType ?? 'UNKNOWN',
+        imageBytes: imageBytes,
+        imageMimeType: imageMimeType,
+        backImageBytes: backImageBytes,
+        backImageMimeType: backImageMimeType,
+      );
 
       await repository.markClassificationRequestSubmitted(
         userId: widget.user.id,
@@ -333,31 +344,38 @@ class _HomeScreenState extends State<HomeScreen> {
       var pending = await repository.pendingClassificationRequests(
         widget.user.id,
       );
-     for (final request in pending) {
-  if (request.isSubmitted) continue;
+      for (final request in pending) {
+        if (request.isSubmitted) continue;
 
-  final imageFile = File(request.imagePath);
+        final imageFile = File(request.imagePath);
 
-  if (!await imageFile.exists()) {
-    continue;
-  }
+        if (!await imageFile.exists()) {
+          continue;
+        }
 
-  final imageBytes = await imageFile.readAsBytes();
+        final imageBytes = await imageFile.readAsBytes();
+        final backImagePath = request.backImagePath;
+        final backImageFile = backImagePath == null ? null : File(backImagePath);
+        final backImageBytes = backImageFile != null && await backImageFile.exists()
+            ? await backImageFile.readAsBytes()
+            : null;
 
-  await api.submitClassificationRequest(
-    id: request.id,
-    title: request.title,
-    message: request.message,
-    documentType: request.documentType,
-    imageBytes: imageBytes,
-    imageMimeType: request.imageMimeType,
-  );
+        await api.submitClassificationRequest(
+          id: request.id,
+          title: request.title,
+          message: request.message,
+          documentType: request.documentType,
+          imageBytes: imageBytes,
+          imageMimeType: request.imageMimeType,
+          backImageBytes: backImageBytes,
+          backImageMimeType: backImageBytes == null ? null : request.backImageMimeType,
+        );
 
-  await repository.markClassificationRequestSubmitted(
-    userId: widget.user.id,
-    id: request.id,
-  );
-}
+        await repository.markClassificationRequestSubmitted(
+          userId: widget.user.id,
+          id: request.id,
+        );
+      }
 
       pending = await repository.pendingClassificationRequests(widget.user.id);
       if (pending.isEmpty) return;
@@ -371,13 +389,20 @@ class _HomeScreenState extends State<HomeScreen> {
         if (remote == null) continue;
         final status = remote['status'];
         if (status == 'ADMIN_REVIEWED') {
-          final category = remote['category'];
+          final rawCategory = remote['category'];
           final level = remote['security_level'];
-          if (category is! String || level is! String) {
+
+          if (rawCategory is! String || level is! String) {
             throw const FormatException(
               'La décision Admin ne contient pas de classement valide.',
             );
           }
+
+          // توحيد الفاصلة العليا حتى تتطابق مع VaultDocument.categories
+          final category = rawCategory.trim().replaceAll("'", "’");
+          debugPrint('CLASSIFICATION DEBUG:');
+          debugPrint('category = $category');
+          debugPrint('security_level = $level');
           final securityLevel = DocumentSecurityLevel.values.firstWhere(
             (value) => value.databaseValue == level,
             orElse: () => throw FormatException(
@@ -389,6 +414,14 @@ class _HomeScreenState extends State<HomeScreen> {
             id: request.id,
             category: category,
             securityLevel: securityLevel,
+            firstName: remote['first_name'] as String?,
+            lastName: remote['last_name'] as String?,
+            documentNumber: remote['document_number'] as String?,
+            dateOfBirth: remote['date_of_birth'] as String?,
+            placeOfBirth: remote['place_of_birth'] as String?,
+            expirationDate: DateTime.tryParse(
+              remote['expiration_date'] as String? ?? '',
+            ),
           );
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -445,6 +478,31 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openWallet() => setState(() => _selectedTab = 1);
 
+  void _openCategoryDocuments(String category) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => DigitalWalletScreen(
+          documents: _documents,
+          onAddDocument: _addDocument,
+          onDeleteLocalDocument: _deleteLocalCin,
+          documentShareService: widget.documentShareService,
+          initialCategory: category,
+        ),
+      ),
+    );
+  }
+
+  void _openReminders() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => RemindersScreen(
+          documents: List<VaultDocument>.unmodifiable(_documents),
+          reminderService: _reminderService,
+        ),
+      ),
+    );
+  }
+
   // ── Notifications ──────────────────────────────────────────────────────────
 
   Future<void> _loadNotifications() async {
@@ -463,7 +521,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-    Future<void> _dismissNotificationBanner() async {
+  Future<void> _dismissNotificationBanner() async {
     setState(() => _notifBannerDismissed = true);
     try {
       await widget.classificationApi?.markAllNotificationsRead();
@@ -487,9 +545,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.all(20),
             decoration: const BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(24),
-              ),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
             child: Column(
               children: [
@@ -542,8 +598,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   Expanded(
                     child: ListView.separated(
                       itemCount: notifications.length,
-                     separatorBuilder: (context, index) =>
-    const SizedBox(height: 10),
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 10),
                       itemBuilder: (context, index) {
                         final notification = notifications[index];
                         final accepted = notification.isAccepted;
@@ -583,8 +639,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       notification.title,
@@ -633,11 +688,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               ),
                               if (!notification.isRead)
-                                const Icon(
-                                  Icons.circle,
-                                  color: _teal,
-                                  size: 9,
-                                ),
+                                const Icon(Icons.circle, color: _teal, size: 9),
                             ],
                           ),
                         );
@@ -699,7 +750,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-    String get _firstName {
+  String get _firstName {
     final name = widget.user.displayName?.trim();
     if (name == null || name.isEmpty) return 'vous';
     return name.split(RegExp(r'\s+')).first;
@@ -718,8 +769,7 @@ class _HomeScreenState extends State<HomeScreen> {
             // ── Bannière notifications non lues ───────────────────────────
             if (!_notifBannerDismissed && _notifications.any((n) => !n.isRead))
               _NotificationBanner(
-                notifications:
-                    _notifications.where((n) => !n.isRead).toList(),
+                notifications: _notifications.where((n) => !n.isRead).toList(),
                 onDismiss: _dismissNotificationBanner,
                 onViewWallet: _openWallet,
               ),
@@ -1174,7 +1224,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 width: itemWidth,
                 child: _CategoryCard(
                   category: categories[index],
-                  onTap: _openWallet,
+                  onTap: () =>
+                      _openCategoryDocuments(switch (categories[index].title) {
+                        'Identité' => 'Pièce d’identité',
+                        'Diplômes' => 'Diplôme',
+                        'Permis' => 'Permis de conduire',
+                        _ => 'Autres',
+                      }),
                 ),
               ),
               if (index < categories.length - 1) const SizedBox(width: 10),
@@ -1308,7 +1364,11 @@ class _HomeScreenState extends State<HomeScreen> {
           _addDocument();
           return;
         }
-        _showComingSoon(index == 3 ? 'Les rappels' : 'Le profil');
+        if (index == 3) {
+          _openReminders();
+          return;
+        }
+        _showComingSoon('Le profil');
       },
       destinations: const [
         NavigationDestination(
@@ -1598,12 +1658,13 @@ class _NotificationBanner extends StatelessWidget {
 
     final hasAccepted = accepted.isNotEmpty;
 
-    final Color bannerBg =
-        hasAccepted ? const Color(0xFFE8F4F2) : const Color(0xFFFFF1F1);
-    final Color accentColor =
-        hasAccepted ? _teal : const Color(0xFFDC2626);
-    final IconData bannerIcon =
-        hasAccepted ? Icons.check_circle_rounded : Icons.cancel_rounded;
+    final Color bannerBg = hasAccepted
+        ? const Color(0xFFE8F4F2)
+        : const Color(0xFFFFF1F1);
+    final Color accentColor = hasAccepted ? _teal : const Color(0xFFDC2626);
+    final IconData bannerIcon = hasAccepted
+        ? Icons.check_circle_rounded
+        : Icons.cancel_rounded;
 
     String title;
     if (accepted.isNotEmpty && rejected.isNotEmpty) {
@@ -1626,9 +1687,7 @@ class _NotificationBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: bannerBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: accentColor.withValues(alpha: 0.25),
-        ),
+        border: Border.all(color: accentColor.withValues(alpha: 0.25)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1660,35 +1719,34 @@ class _NotificationBanner extends StatelessWidget {
           // Liste des documents acceptés avec leur container
           if (accepted.isNotEmpty) ...[
             const SizedBox(height: 10),
-            ...accepted.take(3).map(
-              (n) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  children: [
-                    const SizedBox(width: 30),
-                    Icon(
-                      Icons.folder_rounded,
-                      color: _teal.withValues(alpha: 0.7),
-                      size: 14,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        n.category != null
-                            ? 'Classé dans « ${n.category} »'
-                            : n.body,
-                        style: const TextStyle(
-                          color: _ink,
-                          fontSize: 12,
+            ...accepted
+                .take(3)
+                .map(
+                  (n) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 30),
+                        Icon(
+                          Icons.folder_rounded,
+                          color: _teal.withValues(alpha: 0.7),
+                          size: 14,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            n.category != null
+                                ? 'Classé dans « ${n.category} »'
+                                : n.body,
+                            style: const TextStyle(color: _ink, fontSize: 12),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
           ],
           if (accepted.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -1709,10 +1767,7 @@ class _NotificationBanner extends StatelessWidget {
                 ),
                 child: const Text(
                   'Voir mes documents →',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                 ),
               ),
             ),

@@ -535,7 +535,9 @@ function validImage(body: Record<string, unknown>):
 async function uploadClassificationImage(
   env: Env,
   image: { bytes: Uint8Array; mimeType: string },
-): Promise<string> {
+  folder = "/smartvault-classification",
+  prefix = "classification",
+): Promise<{ path: string; fileId: string }> {
   const privateKey = env.IMAGEKIT_PRIVATE_KEY;
 
   if (!privateKey || !env.IMAGEKIT_URL_ENDPOINT) {
@@ -543,7 +545,7 @@ async function uploadClassificationImage(
   }
 
   const extension = image.mimeType === "image/png" ? "png" : "jpg";
-  const fileName = `classification-${crypto.randomUUID()}.${extension}`;
+  const fileName = `${prefix}-${crypto.randomUUID()}.${extension}`;
 
   const form = new FormData();
 
@@ -558,7 +560,7 @@ async function uploadClassificationImage(
     fileName,
   );
   form.append("fileName", fileName);
-  form.append("folder", "/smartvault-classification");
+  form.append("folder", folder);
   form.append("useUniqueFileName", "true");
   form.append("isPrivateFile", "true");
 
@@ -579,11 +581,32 @@ async function uploadClassificationImage(
 
   const result = await response.json() as Record<string, unknown>;
 
-  if (typeof result.filePath !== "string" || !result.filePath) {
-    throw new Error("ImageKit did not return a valid file path.");
+  if (
+    typeof result.filePath !== "string" ||
+    !result.filePath ||
+    typeof result.fileId !== "string" ||
+    !result.fileId
+  ) {
+    throw new Error("ImageKit did not return a valid private file reference.");
   }
 
-  return result.filePath;
+  return { path: result.filePath, fileId: result.fileId };
+}
+
+async function deleteImageKitFile(env: Env, fileId: string): Promise<void> {
+  if (!fileId || !env.IMAGEKIT_PRIVATE_KEY) return;
+  const response = await fetch(
+    `https://api.imagekit.io/v1/files/${encodeURIComponent(fileId)}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Basic ${btoa(`${env.IMAGEKIT_PRIVATE_KEY}:`)}`,
+      },
+    },
+  );
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`ImageKit file deletion failed: ${response.status}`);
+  }
 }
 
 function documentFromRow(row: Record<string, unknown>) {
@@ -879,15 +902,70 @@ export default {
         }
         const row = await env.smartvault_db
           .prepare(
-            `SELECT fields_json FROM document_shares
+            `SELECT fields_json, images_json FROM document_shares
              WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?`,
           )
           .bind(await sha256Hex(body.token), Date.now())
-          .first<{ fields_json: string }>();
+          .first<{ fields_json: string; images_json: string | null }>();
         if (!row) {
           return json({ success: false, error: "Share link is expired or revoked" }, 404);
         }
-        return json({ success: true, fields: JSON.parse(row.fields_json) });
+        return json({
+          success: true,
+          fields: JSON.parse(row.fields_json),
+          images: row.images_json ? Object.keys(JSON.parse(row.images_json)) : [],
+        });
+      }
+
+      const shareImageMatch = path.match(/^\/api\/shares\/image\/(front|back)$/);
+      if (shareImageMatch && request.method === "POST") {
+        let body: unknown;
+        try { body = await request.json(); } catch {
+          return json({ success: false, error: "Invalid JSON" }, 400);
+        }
+        if (!isRecord(body) || typeof body.token !== "string" || body.token.length > 128) {
+          return json({ success: false, error: "Invalid share link" }, 400);
+        }
+        const share = await env.smartvault_db.prepare(
+          `SELECT images_json FROM document_shares
+           WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?`,
+        ).bind(await sha256Hex(body.token), Date.now())
+          .first<{ images_json: string | null }>();
+        if (!share?.images_json) return json({ success: false, error: "Shared image unavailable" }, 404);
+        const images = JSON.parse(share.images_json) as Record<string, { path: string; fileId?: string; mime: string }>;
+        const image = images[shareImageMatch[1]];
+        if (!image || typeof image.path !== "string" || !image.path.startsWith("/") ||
+            (image.mime !== "image/jpeg" && image.mime !== "image/png")) {
+          return json({ success: false, error: "Shared image unavailable" }, 404);
+        }
+        try {
+          const expiresAt = Math.floor(Date.now() / 1000) + 60;
+          const key = await crypto.subtle.importKey(
+            "raw", new TextEncoder().encode(env.IMAGEKIT_PRIVATE_KEY),
+            { name: "HMAC", hash: "SHA-1" }, false, ["sign"],
+          );
+          const signatureBuffer = await crypto.subtle.sign(
+            "HMAC", key, new TextEncoder().encode(`${image.path}${expiresAt}`),
+          );
+          const signature = Array.from(new Uint8Array(signatureBuffer))
+            .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+          const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\/+$/, "");
+          const imageResponse = await fetch(
+            `${endpoint}${image.path}?ik-t=${expiresAt}&ik-s=${signature}`,
+          );
+          if (!imageResponse.ok) return json({ success: false, error: "Image retrieval failed" }, 502);
+          return new Response(imageResponse.body, {
+            headers: {
+              ...corsHeaders,
+              "Content-Type": image.mime,
+              "Cache-Control": "no-store, private",
+              "X-Content-Type-Options": "nosniff",
+              "Content-Disposition": "inline",
+            },
+          });
+        } catch {
+          return json({ success: false, error: "Image retrieval failed" }, 502);
+        }
       }
 
       if (path === "/share" && request.method === "GET") {
@@ -896,10 +974,11 @@ export default {
 <html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>Document partagé · SmartVault Pro</title>
 <style>body{font:16px system-ui,sans-serif;max-width:640px;margin:12vh auto;padding:24px;color:#172b3a;background:#f4f7f7}main{background:white;padding:24px;border-radius:16px}dt{font-weight:700;margin-top:14px}dd{margin:4px 0;color:#526870}</style>
-<main><h1>Informations partagées</h1><p id="status">Vérification du lien…</p><dl id="fields"></dl></main>
+<main><h1>Document partagé</h1><p id="status">Vérification du lien…</p><dl id="fields"></dl><section id="photos"></section></main>
 <script>
 const status = document.getElementById('status');
 const fields = document.getElementById('fields');
+const photos = document.getElementById('photos');
 const labels = {category:'Catégorie',holderName:'Titulaire',firstName:'Prénom',lastName:'Nom',documentNumber:'Numéro du document',dateOfBirth:'Date de naissance',placeOfBirth:'Lieu de naissance',expirationDate:'Date d’expiration'};
 const token = location.hash.slice(1);
 history.replaceState(null, '', location.pathname);
@@ -907,7 +986,7 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
   .then(async response => {
     const data = await response.json();
     if (!response.ok || !data.success || typeof data.fields !== 'object') throw new Error();
-    status.textContent = 'Ce lien est temporaire. La photo du document n’est pas partagée.';
+    status.textContent = 'Ce lien est temporaire. Les photos Recto et Verso sont protégées et expireront avec le partage.';
     for (const [key, value] of Object.entries(data.fields)) {
       if (typeof value !== 'string' || !labels[key]) continue;
       const label = document.createElement('dt');
@@ -915,6 +994,19 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
       const item = document.createElement('dd');
       item.textContent = value;
       fields.append(label, item);
+    }
+    for (const side of ['front', 'back']) {
+      if (!Array.isArray(data.images) || !data.images.includes(side)) continue;
+      const heading = document.createElement('h2');
+      heading.textContent = side === 'front' ? 'Recto' : 'Verso';
+      const image = document.createElement('img');
+      image.alt = heading.textContent;
+      image.style.cssText = 'display:block;width:100%;height:auto;max-height:420px;object-fit:contain;margin:8px 0 20px;border:1px solid #e5ebeb;border-radius:12px';
+      photos.append(heading, image);
+      fetch('/api/shares/image/' + side, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})})
+        .then(response => { if (!response.ok) throw new Error(); return response.blob(); })
+        .then(blob => { image.src = URL.createObjectURL(blob); })
+        .catch(() => { image.alt = 'Photo indisponible ou partage expiré'; });
     }
   })
   .catch(() => { status.textContent = 'Ce lien est invalide, révoqué ou expiré.'; });
@@ -925,7 +1017,7 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
               "Content-Type": "text/html; charset=utf-8",
               "Cache-Control": "no-store",
               "Content-Security-Policy":
-                "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+                "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; img-src blob:; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
               "Referrer-Policy": "no-referrer",
               "X-Content-Type-Options": "nosniff",
             },
@@ -1020,7 +1112,8 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
           .prepare("UPDATE classification_requests SET status = 'REJECTED', rejection_reason = 'Request expired' WHERE status = 'PENDING' AND expires_at <= ?")
           .bind(nowIso).run();
         const result = await env.smartvault_db
-          .prepare(`SELECT id, user_email, title, message, document_type, status, created_at, expires_at
+          .prepare(`SELECT id, user_email, title, message, document_type, status, created_at, expires_at,
+                    CASE WHEN back_image_key IS NOT NULL AND back_image_key != '' THEN 1 ELSE 0 END AS has_back_image
              FROM classification_requests WHERE status = 'PENDING' AND expires_at > ? ORDER BY created_at ASC`)
           .bind(new Date().toISOString()).all();
         return json({ success: true, requests: result.results });
@@ -1038,89 +1131,56 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
 
 {
   const photoPfx = "/api/admin/classification-requests/";
+  const isBackPhoto = path.endsWith("/back-photo");
+  const isFrontPhoto = path.endsWith("/photo");
 
-  if (
-    path.startsWith(photoPfx) &&
-    path.endsWith("/photo") &&
-    request.method === "GET"
-  ) {
+  if ((isFrontPhoto || isBackPhoto) && request.method === "GET" && path.startsWith(photoPfx)) {
     const adm = await authenticatedAdmin(request, env);
+    if (!adm) return json({ success: false, error: "Admin authentication required" }, 401);
 
-    if (!adm) {
-      return json(
-        { success: false, error: "Admin authentication required" },
-        401,
-      );
-    }
-
-    const requestId = path.slice(
-      photoPfx.length,
-      -"/photo".length,
-    );
-
+    const suffix = isBackPhoto ? "/back-photo" : "/photo";
+    const requestId = path.slice(photoPfx.length, -suffix.length);
     if (!requestId || requestId.includes("/")) {
       return json({ success: false, error: "Invalid request ID" }, 400);
     }
 
     const record = await env.smartvault_db
-      .prepare(
-        "SELECT image_key, image_mime_type FROM classification_requests WHERE id = ?",
-      )
+      .prepare(isBackPhoto
+        ? "SELECT back_image_key AS image_key, back_image_mime_type AS image_mime_type FROM classification_requests WHERE id = ?"
+        : "SELECT image_key, image_mime_type FROM classification_requests WHERE id = ?")
       .bind(requestId)
-      .first<{ image_key: string; image_mime_type: string }>();
+      .first<{ image_key: string | null; image_mime_type: string | null }>();
 
     if (!record || !record.image_key) {
       return json({ success: false, error: "Classification photo not found" }, 404);
     }
-
-    if (
-      !record.image_key.startsWith("/") ||
-      (record.image_mime_type !== "image/jpeg" &&
-        record.image_mime_type !== "image/png")
-    ) {
+    if (!record.image_key.startsWith("/") ||
+        (record.image_mime_type !== "image/jpeg" && record.image_mime_type !== "image/png")) {
       return json({ success: false, error: "Invalid stored image information" }, 500);
     }
 
     try {
       const expiresAt = Math.floor(Date.now() / 1000) + 60;
-
       const key = await crypto.subtle.importKey(
-        "raw",
-        new TextEncoder().encode(env.IMAGEKIT_PRIVATE_KEY),
-        { name: "HMAC", hash: "SHA-1" },
-        false,
-        ["sign"],
+        "raw", new TextEncoder().encode(env.IMAGEKIT_PRIVATE_KEY),
+        { name: "HMAC", hash: "SHA-1" }, false, ["sign"],
       );
-
       const signatureBuffer = await crypto.subtle.sign(
-        "HMAC",
-        key,
-        new TextEncoder().encode(`${record.image_key}${expiresAt}`),
+        "HMAC", key, new TextEncoder().encode(`${record.image_key}${expiresAt}`),
       );
-
       const signature = Array.from(new Uint8Array(signatureBuffer))
-        .map((byte) => byte.toString(16).padStart(2, "0"))
-        .join("");
-
-      const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\/+$/, "");
-
-      const imageUrl =
-        `${endpoint}${record.image_key}` +
-        `?ik-t=${expiresAt}&ik-s=${signature}`;
-
+        .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+      const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\\/+$/, "");
+      const imageUrl = `${endpoint}${record.image_key}?ik-t=${expiresAt}&ik-s=${signature}`;
       const imageResponse = await fetch(imageUrl);
-
       if (!imageResponse.ok) {
         return json({ success: false, error: "Unable to retrieve image from ImageKit" }, 502);
       }
-
       return new Response(imageResponse.body, {
         status: 200,
         headers: {
-          ...corsHeaders,
-          "Content-Type": record.image_mime_type,
-          "Cache-Control": "no-store",
-          "X-Content-Type-Options": "nosniff",
+          ...corsHeaders, "Content-Type": record.image_mime_type,
+          "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
           "Content-Disposition": "inline",
         },
       });
@@ -1144,12 +1204,33 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
           const reqId = decodeURIComponent(path.slice(decPfx.length, -"/decision".length));
             const decision = body.decision;
           const level = body.security_level;
-          const category = nullableString(body.category);
+          const rawCategory = nullableString(body.category);
+          const category = rawCategory === "Pièce d'identité"
+            ? "Pièce d’identité"
+            : rawCategory;
 
           const accepted = decision === "accept";
+          const optionalMetadata = (value: unknown, maxLength = 200): string | null =>
+            typeof value === "string" && value.trim().length > 0
+              ? value.trim().slice(0, maxLength)
+              : null;
+          const firstName = accepted ? optionalMetadata(body.first_name) : null;
+          const lastName = accepted ? optionalMetadata(body.last_name) : null;
+          const documentNumber = accepted ? optionalMetadata(body.document_number, 80) : null;
+          const dateOfBirth = accepted ? optionalMetadata(body.date_of_birth, 10) : null;
+          const placeOfBirth = accepted ? optionalMetadata(body.place_of_birth) : null;
+          const expirationDate = accepted ? optionalMetadata(body.expiration_date, 10) : null;
+          const validDate = (value: string | null) =>
+            value === null ||
+            (/^\d{4}-\d{2}-\d{2}$/.test(value) &&
+              !Number.isNaN(Date.parse(value)));
+
+          if (!validDate(dateOfBirth) || !validDate(expirationDate)) {
+            return json({ success: false, error: "Invalid identity date" }, 400);
+          }
 
           const validHigh = [
-            "Pièce d'identité",
+            "Pièce d’identité",
             "Passeport",
             "Permis de conduire",
             "Autres",
@@ -1187,14 +1268,46 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
           const rejReason = typeof body.rejection_reason === "string" ? body.rejection_reason.trim().slice(0, 500) : null;
           const upd = await env.smartvault_db
             .prepare(`UPDATE classification_requests SET status = ?, security_level = ?,
-               category = ?, rejection_reason = ?, decided_at = CURRENT_TIMESTAMP,
+               category = ?, rejection_reason = ?, first_name = ?, last_name = ?,
+               document_number = ?, date_of_birth = ?, place_of_birth = ?,
+               expiration_date = ?, decided_at = CURRENT_TIMESTAMP,
                decided_by = ? WHERE id = ? AND status = 'PENDING'`)
-            .bind(decStatus, accepted ? level : null, accepted ? category : null, rejReason, adm.email, reqId)
+            .bind(
+              decStatus,
+              accepted ? level : null,
+              accepted ? category : null,
+              rejReason,
+              firstName,
+              lastName,
+              documentNumber,
+              dateOfBirth,
+              placeOfBirth,
+              expirationDate,
+              adm.email,
+              reqId,
+            )
             .run();
           if (upd.meta.changes !== 1) return json({ success: false, error: "Request was already decided" }, 409);
           await env.smartvault_db
             .prepare("INSERT INTO admin_logs (id, admin_email, request_id, action, details) VALUES (?, ?, ?, ?, ?)")
-            .bind(crypto.randomUUID(), adm.email, reqId, decStatus, accepted ? JSON.stringify({ level, category }) : rejReason)
+            .bind(
+              crypto.randomUUID(),
+              adm.email,
+              reqId,
+              decStatus,
+              accepted
+                ? JSON.stringify({
+                    level,
+                    category,
+                    firstName,
+                    lastName,
+                    documentNumber,
+                    dateOfBirth,
+                    placeOfBirth,
+                    expirationDate,
+                  })
+                : rejReason,
+            )
             .run();
           // Notification utilisateur
           const notifTitle = accepted ? `✅ Document accepté : ${reqRow.title}` : `❌ Document refusé : ${reqRow.title}`;
@@ -1238,7 +1351,18 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
           } catch (error) {
             console.error("Push notification dispatch failed:", error);
           }
-          return json({ success: true, status: decStatus, security_level: accepted ? level : null, category: accepted ? category : null });
+          return json({
+            success: true,
+            status: decStatus,
+            security_level: accepted ? level : null,
+            category: accepted ? category : null,
+            first_name: firstName,
+            last_name: lastName,
+            document_number: documentNumber,
+            date_of_birth: dateOfBirth,
+            place_of_birth: placeOfBirth,
+            expiration_date: expirationDate,
+          });
         }
       }
 
@@ -1428,6 +1552,16 @@ if (path === "/api/push/register" && request.method === "POST") {
         const documentId = nullableString(body.document_id);
         const duration = body.duration_minutes;
         const fields = body.fields;
+        const frontImage = validImage({
+          image_base64: body.front_image_base64,
+          image_mime_type: body.front_image_mime_type,
+        });
+        const backImage = body.back_image_base64 == null && body.back_image_mime_type == null
+          ? null
+          : validImage({
+              image_base64: body.back_image_base64,
+              image_mime_type: body.back_image_mime_type,
+            });
         const allowedFields = new Set([
           "category",
           "holderName",
@@ -1441,6 +1575,9 @@ if (path === "/api/push/register" && request.method === "POST") {
         if (
           !documentId ||
           documentId.length > 80 ||
+          !frontImage ||
+          ((body.back_image_base64 == null) !== (body.back_image_mime_type == null)) ||
+          (body.back_image_base64 != null && !backImage) ||
           typeof duration !== "number" ||
           ![5, 15, 30, 60, 1440].includes(duration) ||
           !isRecord(fields) ||
@@ -1457,23 +1594,50 @@ if (path === "/api/push/register" && request.method === "POST") {
           return json({ success: false, error: "Invalid share request" }, 400);
         }
 
-        const doc = await env.smartvault_db
-          .prepare("SELECT id FROM documents WHERE id = ? AND user_id = ?")
-          .bind(documentId, userId)
-          .first();
-        if (!doc) {
+        // Preserve ownership checks for cloud documents. A missing D1 row is
+        // allowed because CIN documents are intentionally stored only on-device;
+        // this request still supplies its own images and fields under userId.
+        const existingDocument = await env.smartvault_db
+          .prepare("SELECT user_id FROM documents WHERE id = ?")
+          .bind(documentId)
+          .first<{ user_id: string | null }>();
+        if (existingDocument && existingDocument.user_id !== userId) {
           return json({ success: false, error: "Document not found" }, 404);
         }
-
         const id = crypto.randomUUID();
         const token = randomToken();
         const now = Date.now();
         const expiresAt = now + duration * 60 * 1000;
+        let imagesJson = "";
+        const uploadedFileIds: string[] = [];
+        try {
+          const frontUpload = await uploadClassificationImage(env, frontImage!, "/smartvault-shares", "share-front");
+          uploadedFileIds.push(frontUpload.fileId);
+          const images: Record<string, { path: string; fileId: string; mime: string }> = {
+            front: { path: frontUpload.path, fileId: frontUpload.fileId, mime: frontImage!.mimeType },
+          };
+          if (backImage) {
+            const backUpload = await uploadClassificationImage(env, backImage, "/smartvault-shares", "share-back");
+            uploadedFileIds.push(backUpload.fileId);
+            images.back = { path: backUpload.path, fileId: backUpload.fileId, mime: backImage.mimeType };
+          }
+          imagesJson = JSON.stringify(images);
+        } catch (error) {
+          console.error("Share image upload failed:", error);
+          // Best-effort cleanup if only one side was uploaded.
+          for (const fileId of uploadedFileIds) {
+            try { await deleteImageKitFile(env, fileId); } catch (cleanupError) {
+              console.error("Orphan share image cleanup failed:", cleanupError);
+            }
+          }
+          // Access remains denied because no share record is created.
+          return json({ success: false, error: "Unable to upload document photos" }, 502);
+        }
         await env.smartvault_db
           .prepare(
             `INSERT INTO document_shares
-             (id, user_id, document_id, token_hash, fields_json, expires_at, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             (id, user_id, document_id, token_hash, fields_json, images_json, expires_at, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .bind(
             id,
@@ -1488,6 +1652,7 @@ if (path === "/api/push/register" && request.method === "POST") {
                 ]),
               ),
             ),
+            imagesJson,
             expiresAt,
             now,
           )
@@ -1546,15 +1711,23 @@ if (path === "/api/push/register" && request.method === "POST") {
         request.method === "DELETE"
       ) {
         const id = decodeURIComponent(path.slice(revokePrefix.length));
-        const result = await env.smartvault_db
-          .prepare(
-            `UPDATE document_shares SET revoked_at = ?
-             WHERE id = ? AND user_id = ? AND revoked_at IS NULL`,
-          )
+        const share = await env.smartvault_db
+          .prepare("SELECT images_json FROM document_shares WHERE id = ? AND user_id = ? AND revoked_at IS NULL")
+          .bind(id, userId)
+          .first<{ images_json: string | null }>();
+        if (!share) return json({ success: false, error: "Share not found" }, 404);
+        await env.smartvault_db
+          .prepare("UPDATE document_shares SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL")
           .bind(Date.now(), id, userId)
           .run();
-        if (result.meta.changes !== 1) {
-          return json({ success: false, error: "Share not found" }, 404);
+        if (share.images_json) {
+          const images = JSON.parse(share.images_json) as Record<string, { fileId?: string }>;
+          for (const image of Object.values(images)) {
+            if (!image.fileId) continue;
+            try { await deleteImageKitFile(env, image.fileId); } catch (error) {
+              console.error("Revoked share image cleanup failed:", error);
+            }
+          }
         }
         return json({ success: true });
       }
@@ -1583,121 +1756,100 @@ if (path === "/api/classification-requests" && request.method === "POST") {
   }
 
   const image = validImage(body);
-  if (!image) {
-    return json({ success: false, error: "Invalid or missing image" }, 400);
+  const backImage = body.back_image_base64 == null && body.back_image_mime_type == null
+    ? null
+    : validImage({ image_base64: body.back_image_base64, image_mime_type: body.back_image_mime_type });
+  if (!image ||
+      ((body.back_image_base64 == null) !== (body.back_image_mime_type == null)) ||
+      (body.back_image_base64 != null && !backImage)) {
+    return json({ success: false, error: "Invalid or missing front/back image" }, 400);
   }
 
   const existing = await env.smartvault_db
     .prepare(
-      "SELECT user_id, status, image_key FROM classification_requests WHERE id = ?",
+      "SELECT user_id, status, image_key, back_image_key FROM classification_requests WHERE id = ?",
     )
     .bind(id)
-    .first<{ user_id: string; status: string; image_key: string }>();
+    .first<{ user_id: string; status: string; image_key: string; back_image_key: string | null }>();
 
   if (existing && existing.user_id !== userId) {
     return json({ success: false, error: "Request already exists" }, 409);
   }
 
-  if (existing && existing.image_key) {
-    return json({ success: true, status: existing.status });
+  if (existing && existing.user_id !== userId) {
+    return json({ success: false, error: "Request already exists" }, 409);
   }
 
-  const extension = image.mimeType === "image/png" ? "png" : "jpg";
-  const fileName = `classification-${id}.${extension}`;
-
-  const uploadForm = new FormData();
-  uploadForm.append(
-    "file",
-    new Blob([image.bytes], { type: image.mimeType }),
-    fileName,
-  );
-  uploadForm.append("fileName", fileName);
-  uploadForm.append("folder", "/smartvault/classification-requests");
-  uploadForm.append("useUniqueFileName", "true");
-  uploadForm.append("isPrivateFile", "true");
-
-  let uploadResponse: Response;
+  let imageKey = existing?.image_key || "";
+  let backImageKey = existing?.back_image_key || null;
+  let uploadedFrontFileId: string | null = null;
+  let uploadedBackFileId: string | null = null;
   try {
-    uploadResponse = await fetch(
-      "https://upload.imagekit.io/api/v1/files/upload",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${btoa(`${env.IMAGEKIT_PRIVATE_KEY}:`)}`,
-        },
-        body: uploadForm,
-      },
-    );
-  } catch {
-    return json({ success: false, error: "Image upload failed" }, 502);
+    if (!imageKey) {
+      const uploadedFront = await uploadClassificationImage(
+        env, image, "/smartvault/classification-requests", "classification-front",
+      );
+      imageKey = uploadedFront.path;
+      uploadedFrontFileId = uploadedFront.fileId;
+    }
+    if (backImage && !backImageKey) {
+      const uploadedBack = await uploadClassificationImage(
+        env, backImage, "/smartvault/classification-requests", "classification-back",
+      );
+      backImageKey = uploadedBack.path;
+      uploadedBackFileId = uploadedBack.fileId;
+    }
+  } catch (error) {
+    if (uploadedBackFileId) {
+      try { await deleteImageKitFile(env, uploadedBackFileId); } catch (cleanupError) {
+        console.error("Classification back image cleanup failed:", cleanupError);
+      }
+    }
+    if (uploadedFrontFileId) {
+      try { await deleteImageKitFile(env, uploadedFrontFileId); } catch (cleanupError) {
+        console.error("Classification front image cleanup failed:", cleanupError);
+      }
+    }
+    console.error("Classification image upload failed:", error);
+    return json({ success: false, error: "Classification image upload failed" }, 502);
   }
 
-  if (!uploadResponse.ok) {
-    return json({ success: false, error: "ImageKit upload failed" }, 502);
-  }
-
-  let uploadResult: unknown;
-  try {
-    uploadResult = await uploadResponse.json();
-  } catch {
-    return json({ success: false, error: "Invalid ImageKit response" }, 502);
-  }
-
-  if (
-    !isRecord(uploadResult) ||
-    typeof uploadResult.filePath !== "string" ||
-    !uploadResult.filePath.startsWith("/")
-  ) {
-    return json({ success: false, error: "ImageKit did not return a valid file path" }, 502);
-  }
-
-  const imageKey = uploadResult.filePath;
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-
   if (existing) {
-    await env.smartvault_db
-      .prepare(
-        `UPDATE classification_requests
-         SET image_key = ?, image_mime_type = ?
-         WHERE id = ? AND user_id = ?`,
-      )
-      .bind(imageKey, image.mimeType, id, userId)
-      .run();
-
+    await env.smartvault_db.prepare(
+      `UPDATE classification_requests
+       SET image_key = ?, image_mime_type = ?,
+           back_image_key = COALESCE(?, back_image_key),
+           back_image_mime_type = COALESCE(?, back_image_mime_type)
+       WHERE id = ? AND user_id = ?`,
+    ).bind(
+      imageKey, image.mimeType,
+      backImage ? backImageKey : null, backImage?.mimeType ?? null,
+      id, userId,
+    ).run();
     return json({ success: true, status: existing.status });
   }
 
-  await env.smartvault_db
-    .prepare(
-      `INSERT INTO classification_requests
-       (id, user_id, user_email, title, message, document_type,
-        image_key, image_mime_type, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .bind(
-      id,
-      userId,
-      email,
-      title,
-      message,
-      documentType,
-      imageKey,
-      image.mimeType,
-      expiresAt,
-    )
-    .run();
+  await env.smartvault_db.prepare(
+    `INSERT INTO classification_requests
+     (id, user_id, user_email, title, message, document_type,
+      image_key, image_mime_type, back_image_key, back_image_mime_type, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    id, userId, email, title, message, documentType,
+    imageKey, image.mimeType, backImageKey, backImage?.mimeType ?? null, expiresAt,
+  ).run();
 
-  return json(
-    { success: true, status: "PENDING", expires_at: expiresAt },
-    201,
-  );
+  return json({ success: true, status: "PENDING", expires_at: expiresAt }, 201);
 }
 
       if (path === "/api/classification-requests/mine" && request.method === "GET") {
         const result = await env.smartvault_db
           .prepare(
             `SELECT id, title, document_type, status, security_level, category,
-                    rejection_reason, created_at, expires_at
+                    rejection_reason, first_name, last_name, document_number,
+                    date_of_birth, place_of_birth, expiration_date,
+                    created_at, expires_at
              FROM classification_requests WHERE user_id = ? ORDER BY created_at DESC`,
           )
           .bind(userId)
@@ -1884,5 +2036,28 @@ if (path === "/api/classification-requests" && request.method === "POST") {
       .prepare("DELETE FROM auth_login_attempts WHERE window_start <= ?")
       .bind(now - 24 * 60 * 60 * 1000)
       .run();
+
+    // Remove private ImageKit files for expired or revoked share links.
+    const staleShares = await env.smartvault_db
+      .prepare(
+        "SELECT id, images_json FROM document_shares WHERE images_json IS NOT NULL AND (revoked_at IS NOT NULL OR expires_at <= ?) LIMIT 25",
+      )
+      .bind(now)
+      .all<{ id: string; images_json: string }>();
+    for (const share of staleShares.results) {
+      try {
+        const images = JSON.parse(share.images_json) as Record<string, { fileId?: string }>;
+        for (const image of Object.values(images)) {
+          if (image.fileId) await deleteImageKitFile(env, image.fileId);
+        }
+        await env.smartvault_db
+          .prepare("UPDATE document_shares SET images_json = NULL WHERE id = ?")
+          .bind(share.id)
+          .run();
+      } catch (error) {
+        // Keep images_json so the next scheduled run can retry cleanup.
+        console.error("Expired share cleanup failed:", error);
+      }
+    }
   },
 } satisfies ExportedHandler<Env>;
