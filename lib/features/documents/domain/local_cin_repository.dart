@@ -34,7 +34,7 @@ typedef SubmitClassificationRequest =
       Uint8List imageBytes,
       String imageMimeType,
       String message,
-      [Uint8List? backImageBytes, String? backImageMimeType],
+      [Uint8List? backImageBytes, String? backImageMimeType]
     );
 
 class PendingLocalClassification {
