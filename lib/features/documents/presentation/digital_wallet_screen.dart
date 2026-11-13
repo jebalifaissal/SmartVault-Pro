@@ -18,6 +18,7 @@ class DigitalWalletScreen extends StatefulWidget {
     required this.onAddDocument,
     this.onDeleteLocalDocument,
     this.documentShareService,
+    this.initialCategory = 'Tous',
     super.key,
   });
 
@@ -25,6 +26,7 @@ class DigitalWalletScreen extends StatefulWidget {
   final VoidCallback onAddDocument;
   final Future<void> Function(VaultDocument document)? onDeleteLocalDocument;
   final DocumentShareService? documentShareService;
+  final String initialCategory;
 
   @override
   State<DigitalWalletScreen> createState() => _DigitalWalletScreenState();
@@ -32,7 +34,13 @@ class DigitalWalletScreen extends StatefulWidget {
 
 class _DigitalWalletScreenState extends State<DigitalWalletScreen> {
   final _searchController = TextEditingController();
-  String _selectedCategory = 'Tous';
+  late String _selectedCategory;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedCategory = widget.initialCategory;
+  }
 
   static const _filters = ['Tous', ...VaultDocument.categories];
 
