@@ -928,7 +928,7 @@ export default {
           );
           const signature = Array.from(new Uint8Array(signatureBuffer))
             .map((byte) => byte.toString(16).padStart(2, "0")).join("");
-          const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\\/+$/, "");
+          const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\/+$/, "");
           const imageResponse = await fetch(
             `${endpoint}${image.path}?ik-t=${expiresAt}&ik-s=${signature}`,
           );
@@ -957,6 +957,7 @@ export default {
 <script>
 const status = document.getElementById('status');
 const fields = document.getElementById('fields');
+const photos = document.getElementById('photos');
 const labels = {category:'Catégorie',holderName:'Titulaire',firstName:'Prénom',lastName:'Nom',documentNumber:'Numéro du document',dateOfBirth:'Date de naissance',placeOfBirth:'Lieu de naissance',expirationDate:'Date d’expiration'};
 const token = location.hash.slice(1);
 history.replaceState(null, '', location.pathname);
@@ -1172,7 +1173,7 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
         .map((byte) => byte.toString(16).padStart(2, "0"))
         .join("");
 
-      const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\/+$/, "");
+          const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\/+$/, "");
 
       const imageUrl =
         `${endpoint}${record.image_key}` +
