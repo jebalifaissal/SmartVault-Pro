@@ -522,10 +522,15 @@ class SqfliteLocalDocumentRepository
     );
 
     final imagePath = row['image_path'] as String?;
+    final backImagePath = row['back_image_path'] as String?;
     try {
       if (imagePath != null) {
         final imageFile = File(imagePath);
         if (await imageFile.exists()) await imageFile.delete();
+      }
+      if (backImagePath != null) {
+        final backImageFile = File(backImagePath);
+        if (await backImageFile.exists()) await backImageFile.delete();
       }
     } on FileSystemException catch (error) {
       try {
@@ -578,7 +583,7 @@ class SqfliteLocalDocumentRepository
     return _databaseFactory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 4,
+        version: 5,
         onCreate: (database, version) async {
           await _createDocumentsTable(database, _tableName);
           await _createDocumentIndex(database);
