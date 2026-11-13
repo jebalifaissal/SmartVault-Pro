@@ -1737,15 +1737,23 @@ if (path === "/api/push/register" && request.method === "POST") {
         request.method === "DELETE"
       ) {
         const id = decodeURIComponent(path.slice(revokePrefix.length));
-        const result = await env.smartvault_db
-          .prepare(
-            `UPDATE document_shares SET revoked_at = ?
-             WHERE id = ? AND user_id = ? AND revoked_at IS NULL`,
-          )
+        const share = await env.smartvault_db
+          .prepare("SELECT images_json FROM document_shares WHERE id = ? AND user_id = ? AND revoked_at IS NULL")
+          .bind(id, userId)
+          .first<{ images_json: string | null }>();
+        if (!share) return json({ success: false, error: "Share not found" }, 404);
+        await env.smartvault_db
+          .prepare("UPDATE document_shares SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL")
           .bind(Date.now(), id, userId)
           .run();
-        if (result.meta.changes !== 1) {
-          return json({ success: false, error: "Share not found" }, 404);
+        if (share.images_json) {
+          const images = JSON.parse(share.images_json) as Record<string, { fileId?: string }>;
+          for (const image of Object.values(images)) {
+            if (!image.fileId) continue;
+            try { await deleteImageKitFile(env, image.fileId); } catch (error) {
+              console.error("Revoked share image cleanup failed:", error);
+            }
+          }
         }
         return json({ success: true });
       }
@@ -2077,5 +2085,28 @@ if (path === "/api/classification-requests" && request.method === "POST") {
       .prepare("DELETE FROM auth_login_attempts WHERE window_start <= ?")
       .bind(now - 24 * 60 * 60 * 1000)
       .run();
+
+    // Remove private ImageKit files for expired or revoked share links.
+    const staleShares = await env.smartvault_db
+      .prepare(
+        "SELECT id, images_json FROM document_shares WHERE images_json IS NOT NULL AND (revoked_at IS NOT NULL OR expires_at <= ?) LIMIT 25",
+      )
+      .bind(now)
+      .all<{ id: string; images_json: string }>();
+    for (const share of staleShares.results) {
+      try {
+        const images = JSON.parse(share.images_json) as Record<string, { fileId?: string }>;
+        for (const image of Object.values(images)) {
+          if (image.fileId) await deleteImageKitFile(env, image.fileId);
+        }
+        await env.smartvault_db
+          .prepare("UPDATE document_shares SET images_json = NULL WHERE id = ?")
+          .bind(share.id)
+          .run();
+      } catch (error) {
+        // Keep images_json so the next scheduled run can retry cleanup.
+        console.error("Expired share cleanup failed:", error);
+      }
+    }
   },
 } satisfies ExportedHandler<Env>;
