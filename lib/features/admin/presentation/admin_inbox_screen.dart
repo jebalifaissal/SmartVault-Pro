@@ -79,12 +79,19 @@ class _AdminInboxScreenState extends State<AdminInboxScreen>
 
   Future<void> _openRequest(ClassificationRequest request) async {
     final imageBytes = widget.api.getClassificationRequestPhoto(request.id);
+    final backImageBytes = request.hasBackImage
+        ? widget.api.getClassificationRequestBackPhoto(request.id)
+        : null;
     final decision = await showModalBottomSheet<_AdminDecision>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) =>
-          _DecisionSheet(request: request, imageBytes: imageBytes),
+          _DecisionSheet(
+            request: request,
+            imageBytes: imageBytes,
+            backImageBytes: backImageBytes,
+          ),
     );
     if (decision == null || !mounted) return;
 
@@ -650,10 +657,15 @@ class _HistoryTabState extends State<_HistoryTab>
 // Feuille de décision (BottomSheet)
 // ─────────────────────────────────────────────────────────────────────────────
 class _DecisionSheet extends StatefulWidget {
-  const _DecisionSheet({required this.request, required this.imageBytes});
+  const _DecisionSheet({
+    required this.request,
+    required this.imageBytes,
+    this.backImageBytes,
+  });
 
   final ClassificationRequest request;
   final Future<Uint8List> imageBytes;
+  final Future<Uint8List>? backImageBytes;
 
   @override
   State<_DecisionSheet> createState() => _DecisionSheetState();
@@ -686,6 +698,42 @@ class _DecisionSheetState extends State<_DecisionSheet> {
   void dispose() {
     _rejectController.dispose();
     super.dispose();
+  }
+
+  Widget _buildPhotoPreview(String label, Future<Uint8List> bytes) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(label, style: const TextStyle(color: _ink, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 6),
+        FutureBuilder<Uint8List>(
+          future: bytes,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Container(
+                height: 100,
+                decoration: BoxDecoration(color: _bg, borderRadius: BorderRadius.circular(12), border: Border.all(color: _border)),
+                child: const Center(child: Text('Photo non disponible', style: TextStyle(color: _muted, fontSize: 12))),
+              );
+            }
+            if (!snapshot.hasData) {
+              return Container(
+                height: 100,
+                decoration: BoxDecoration(color: _bg, borderRadius: BorderRadius.circular(12), border: Border.all(color: _border)),
+                child: const Center(child: CircularProgressIndicator(color: _teal, strokeWidth: 2)),
+              );
+            }
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 280),
+                child: Image.memory(snapshot.data!, fit: BoxFit.contain),
+              ),
+            );
+          },
+        ),
+      ],
+    );
   }
 
   @override
@@ -756,62 +804,12 @@ class _DecisionSheetState extends State<_DecisionSheet> {
                 ],
                 const SizedBox(height: 16),
 
-                // Photo du document
-                FutureBuilder<Uint8List>(
-                  future: widget.imageBytes,
-                  builder: (context, snapshot) {
-                    if (snapshot.hasError) {
-                      return Container(
-                        height: 100,
-                        decoration: BoxDecoration(
-                          color: _bg,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: _border),
-                        ),
-                        child: const Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.image_not_supported_outlined,
-                                  color: _muted, size: 28),
-                              SizedBox(height: 6),
-                              Text(
-                                'Photo non disponible',
-                                style: TextStyle(color: _muted, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }
-                    if (!snapshot.hasData) {
-                      return Container(
-                        height: 100,
-                        decoration: BoxDecoration(
-                          color: _bg,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: _border),
-                        ),
-                        child: const Center(
-                          child: CircularProgressIndicator(
-                            color: _teal,
-                            strokeWidth: 2,
-                          ),
-                        ),
-                      );
-                    }
-                    return ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 280),
-                        child: Image.memory(
-                          snapshot.data!,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                // Photos du document : Recto et Verso lorsqu'ils existent.
+                _buildPhotoPreview('Recto', widget.imageBytes),
+                if (widget.backImageBytes != null) ...[
+                  const SizedBox(height: 14),
+                  _buildPhotoPreview('Verso', widget.backImageBytes!),
+                ],
                 const SizedBox(height: 18),
 
                 // Séparateur
