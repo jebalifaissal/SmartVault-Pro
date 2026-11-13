@@ -68,7 +68,7 @@ void main() {
       ),
       'AMINA MODIFIÉE',
     );
-    const saveButton = find.text('Confirmer et Enregistrer la CIN');
+    final saveButton = find.text('Confirmer et Enregistrer la CIN');
     await tester.ensureVisible(saveButton);
     await tester.tap(saveButton);
     await tester.pumpAndSettle();
