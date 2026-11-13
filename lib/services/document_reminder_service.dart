@@ -20,7 +20,12 @@ class DocumentReminderService {
     await _notifications.initialize(settings: settings);
     final android = _notifications.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
-    await android?.requestNotificationsPermission();
+    final permissionGranted = await android?.requestNotificationsPermission();
+    if (permissionGranted == false) {
+      throw StateError(
+        'Autorisez les notifications SmartVault Pro dans les paramètres Android.',
+      );
+    }
     _initialized = true;
   }
 
