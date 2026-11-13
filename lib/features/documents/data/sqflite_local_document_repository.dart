@@ -479,6 +479,7 @@ class SqfliteLocalDocumentRepository
     } on DatabaseException catch (error) {
       try {
         await target.delete();
+        if (backTarget != null) await backTarget.delete();
       } on FileSystemException catch (cleanupError) {
         throw LocalCinException(
           stage: LocalCinSaveStage.databaseWrite,
@@ -642,7 +643,7 @@ class SqfliteLocalDocumentRepository
           if (oldVersion >= 2 && oldVersion < 5) {
             await database.execute('ALTER TABLE $_tableName ADD COLUMN back_image_path TEXT');
           }
-          if (oldVersion < 6) {
+          if (oldVersion >= 4 && oldVersion < 6) {
             await database.execute('ALTER TABLE pending_classification_requests ADD COLUMN back_image_path TEXT');
             await database.execute('ALTER TABLE pending_classification_requests ADD COLUMN back_image_mime_type TEXT');
           }
