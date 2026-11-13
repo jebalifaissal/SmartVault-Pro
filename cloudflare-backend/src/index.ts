@@ -1144,12 +1144,31 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
           const reqId = decodeURIComponent(path.slice(decPfx.length, -"/decision".length));
             const decision = body.decision;
           const level = body.security_level;
-          const category = nullableString(body.category);
+          const rawCategory = nullableString(body.category);
+          const category = rawCategory === "Pièce d'identité"
+            ? "Pièce d’identité"
+            : rawCategory;
 
           const accepted = decision === "accept";
+          const optionalMetadata = (value: unknown, maxLength = 200): string | null =>
+            typeof value === "string" && value.trim().length > 0
+              ? value.trim().slice(0, maxLength)
+              : null;
+          const firstName = accepted ? optionalMetadata(body.first_name) : null;
+          const lastName = accepted ? optionalMetadata(body.last_name) : null;
+          const documentNumber = accepted ? optionalMetadata(body.document_number, 80) : null;
+          const dateOfBirth = accepted ? optionalMetadata(body.date_of_birth, 10) : null;
+          const placeOfBirth = accepted ? optionalMetadata(body.place_of_birth) : null;
+          const expirationDate = accepted ? optionalMetadata(body.expiration_date, 10) : null;
+          const validDate = (value: string | null) =>
+            value === null || /^\\d{4}-\\d{2}-\\d{2}$/.test(value);
+
+          if (!validDate(dateOfBirth) || !validDate(expirationDate)) {
+            return json({ success: false, error: "Invalid identity date" }, 400);
+          }
 
           const validHigh = [
-            "Pièce d'identité",
+            "Pièce d’identité",
             "Passeport",
             "Permis de conduire",
             "Autres",
@@ -1187,14 +1206,46 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
           const rejReason = typeof body.rejection_reason === "string" ? body.rejection_reason.trim().slice(0, 500) : null;
           const upd = await env.smartvault_db
             .prepare(`UPDATE classification_requests SET status = ?, security_level = ?,
-               category = ?, rejection_reason = ?, decided_at = CURRENT_TIMESTAMP,
+               category = ?, rejection_reason = ?, first_name = ?, last_name = ?,
+               document_number = ?, date_of_birth = ?, place_of_birth = ?,
+               expiration_date = ?, decided_at = CURRENT_TIMESTAMP,
                decided_by = ? WHERE id = ? AND status = 'PENDING'`)
-            .bind(decStatus, accepted ? level : null, accepted ? category : null, rejReason, adm.email, reqId)
+            .bind(
+              decStatus,
+              accepted ? level : null,
+              accepted ? category : null,
+              rejReason,
+              firstName,
+              lastName,
+              documentNumber,
+              dateOfBirth,
+              placeOfBirth,
+              expirationDate,
+              adm.email,
+              reqId,
+            )
             .run();
           if (upd.meta.changes !== 1) return json({ success: false, error: "Request was already decided" }, 409);
           await env.smartvault_db
             .prepare("INSERT INTO admin_logs (id, admin_email, request_id, action, details) VALUES (?, ?, ?, ?, ?)")
-            .bind(crypto.randomUUID(), adm.email, reqId, decStatus, accepted ? JSON.stringify({ level, category }) : rejReason)
+            .bind(
+              crypto.randomUUID(),
+              adm.email,
+              reqId,
+              decStatus,
+              accepted
+                ? JSON.stringify({
+                    level,
+                    category,
+                    firstName,
+                    lastName,
+                    documentNumber,
+                    dateOfBirth,
+                    placeOfBirth,
+                    expirationDate,
+                  })
+                : rejReason,
+            )
             .run();
           // Notification utilisateur
           const notifTitle = accepted ? `✅ Document accepté : ${reqRow.title}` : `❌ Document refusé : ${reqRow.title}`;
@@ -1238,7 +1289,18 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
           } catch (error) {
             console.error("Push notification dispatch failed:", error);
           }
-          return json({ success: true, status: decStatus, security_level: accepted ? level : null, category: accepted ? category : null });
+          return json({
+            success: true,
+            status: decStatus,
+            security_level: accepted ? level : null,
+            category: accepted ? category : null,
+            first_name: firstName,
+            last_name: lastName,
+            document_number: documentNumber,
+            date_of_birth: dateOfBirth,
+            place_of_birth: placeOfBirth,
+            expiration_date: expirationDate,
+          });
         }
       }
 
@@ -1697,7 +1759,9 @@ if (path === "/api/classification-requests" && request.method === "POST") {
         const result = await env.smartvault_db
           .prepare(
             `SELECT id, title, document_type, status, security_level, category,
-                    rejection_reason, created_at, expires_at
+                    rejection_reason, first_name, last_name, document_number,
+                    date_of_birth, place_of_birth, expiration_date,
+                    created_at, expires_at
              FROM classification_requests WHERE user_id = ? ORDER BY created_at DESC`,
           )
           .bind(userId)
