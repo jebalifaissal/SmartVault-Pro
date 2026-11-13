@@ -316,19 +316,6 @@ String? _extractDocumentNumber(List<String> lines, String fullText) {
     }
   }
 
-  // 2. Recherche directe de 8 chiffres dans chaque ligne
-  for (final line in lines) {
-    final num = _parseDocumentNumber(line);
-    if (num != null) return num;
-  }
-
-  // 3. Recherche globale avec normalisation tolérante (ex: 08 123 456 ou O8123456)
-  final normalized = _normalizeOcrDigits(fullText);
-  final match = RegExp(r'(?<!\d)(\d{8})(?!\d)').firstMatch(normalized);
-  if (match != null) {
-    return match.group(1);
-  }
-
   return null;
 }
 
