@@ -456,7 +456,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openWallet() => setState(() => _selectedTab = 1);
 
-  void _openIdentityDocuments() {
+  void _openCategoryDocuments(String category) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => DigitalWalletScreen(
@@ -464,7 +464,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onAddDocument: _addDocument,
           onDeleteLocalDocument: _deleteLocalCin,
           documentShareService: widget.documentShareService,
-          initialCategory: 'Pièce d’identité',
+          initialCategory: category,
         ),
       ),
     );
@@ -1210,7 +1210,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 width: itemWidth,
                 child: _CategoryCard(
                   category: categories[index],
-                  onTap: _openIdentityDocuments,
+                  onTap: () => _openCategoryDocuments(
+                    switch (categories[index].title) {
+                      'Identité' => 'Pièce d’identité',
+                      'Diplômes' => 'Diplôme',
+                      'Permis' => 'Permis de conduire',
+                      _ => 'Autres',
+                    },
+                  ),
                 ),
               ),
               if (index < categories.length - 1) const SizedBox(width: 10),
