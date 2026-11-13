@@ -94,6 +94,12 @@ abstract interface class LocalDocumentRepository {
     required String id,
     required String category,
     required DocumentSecurityLevel securityLevel,
+    String? firstName,
+    String? lastName,
+    String? documentNumber,
+    String? dateOfBirth,
+    String? placeOfBirth,
+    DateTime? expirationDate,
   });
 
   Future<void> removeClassificationRequest({
