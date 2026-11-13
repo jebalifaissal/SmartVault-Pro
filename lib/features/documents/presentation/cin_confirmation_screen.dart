@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../domain/local_cin_repository.dart';
 import '../domain/national_id_ocr.dart';
@@ -61,10 +62,15 @@ class _CinConfirmationScreenState extends State<CinConfirmationScreen> {
   bool _isSaving = false;
   String? _saveError;
   int _activePhotoIndex = 0; // 0 = Recto, 1 = Verso
+  final _imagePicker = ImagePicker();
+  Uint8List? _backImageBytes;
+  String? _backImageMimeType;
 
   @override
   void initState() {
     super.initState();
+    _backImageBytes = widget.backImageBytes;
+    _backImageMimeType = widget.backImageBytes == null ? null : 'image/jpeg';
     final random = Random.secure();
     _documentId = List<int>.generate(
       16,
@@ -143,6 +149,8 @@ class _CinConfirmationScreenState extends State<CinConfirmationScreen> {
         document,
         widget.imageBytes,
         widget.imageMimeType,
+        _backImageBytes,
+        _backImageMimeType,
       );
       if (mounted) {
         Navigator.of(context).pop(CinConfirmationSaved(savedDocument));
@@ -166,6 +174,32 @@ class _CinConfirmationScreenState extends State<CinConfirmationScreen> {
     }
   }
 
+  Future<void> _captureBackPhoto() async {
+    try {
+      final selected = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 2400,
+        imageQuality: 88,
+      );
+      if (selected == null || !mounted) return;
+      final bytes = await selected.readAsBytes();
+      if (bytes.isEmpty || bytes.length > 6 * 1024 * 1024) {
+        setState(() => _saveError = 'La photo du Verso doit être valide et peser au maximum 6 Mo.');
+        return;
+      }
+      final path = selected.path.toLowerCase();
+      final mime = path.endsWith('.png') ? 'image/png' : 'image/jpeg';
+      setState(() {
+        _backImageBytes = bytes;
+        _backImageMimeType = mime;
+        _activePhotoIndex = 1;
+        _saveError = null;
+      });
+    } catch (error) {
+      if (mounted) setState(() => _saveError = 'Impossible de prendre la photo du Verso : $error');
+    }
+  }
+
   Future<void> _chooseExpirationDate() async {
     final today = DateTime.now();
     final selectedDate = await showDatePicker(
@@ -185,7 +219,7 @@ class _CinConfirmationScreenState extends State<CinConfirmationScreen> {
   @override
   Widget build(BuildContext context) {
     final result = widget.ocrResult;
-    final hasBack = widget.backImageBytes != null;
+    final hasBack = _backImageBytes != null;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7F7),
@@ -241,7 +275,7 @@ class _CinConfirmationScreenState extends State<CinConfirmationScreen> {
                 borderRadius: BorderRadius.circular(16),
                 child: Image.memory(
                   (_activePhotoIndex == 1 && hasBack)
-                      ? widget.backImageBytes!
+                      ? _backImageBytes!
                       : widget.imageBytes,
                   height: 190,
                   fit: BoxFit.contain,
@@ -253,6 +287,27 @@ class _CinConfirmationScreenState extends State<CinConfirmationScreen> {
               ),
 
               const SizedBox(height: 18),
+
+              if (!hasBack) ...[
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: _isSaving ? null : _captureBackPhoto,
+                  icon: const Icon(Icons.flip_rounded),
+                  label: const Text('Ajouter la photo du Verso'),
+                ),
+                const Text(
+                  'Ajoutez le verso pour pouvoir partager les deux faces de votre CIN.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Color(0xFF71808A), fontSize: 11),
+                ),
+              ] else ...[
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: _isSaving ? null : _captureBackPhoto,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Remplacer la photo du Verso'),
+                ),
+              ],
 
               // ── Titre de section ────────────────────────────────────
               const Text(
