@@ -314,6 +314,12 @@ class SqfliteLocalDocumentRepository
     required String id,
     required String category,
     required DocumentSecurityLevel securityLevel,
+    String? firstName,
+    String? lastName,
+    String? documentNumber,
+    String? dateOfBirth,
+    String? placeOfBirth,
+    DateTime? expirationDate,
   }) async {
     if (!VaultDocument.categories.contains(category) ||
         securityLevel == DocumentSecurityLevel.pending) {
@@ -347,14 +353,37 @@ class SqfliteLocalDocumentRepository
     );
     await source.copy(target.path);
     final now = DateTime.now();
+    final normalizedFirstName = firstName?.trim();
+    final normalizedLastName = lastName?.trim();
+    final fullName = [
+      normalizedFirstName,
+      normalizedLastName,
+    ].whereType<String>().where((value) => value.isNotEmpty).join(' ');
+    final normalizedNumber = documentNumber?.trim();
     final document = VaultDocument(
       id: id,
       title: row['title'] as String,
       category: category,
-      holderName: '',
+      holderName: fullName.isNotEmpty ? fullName : 'À compléter',
       createdAt: now,
       updatedAt: now,
-      documentType: row['document_type'] as String,
+      documentType: category == 'Pièce d’identité'
+          ? 'CIN'
+          : row['document_type'] as String,
+      firstName: normalizedFirstName,
+      lastName: normalizedLastName,
+      fullName: fullName.isEmpty ? null : fullName,
+      documentNumber: normalizedNumber?.isEmpty == true
+          ? null
+          : normalizedNumber,
+      cinNumber: category == 'Pièce d’identité' &&
+              normalizedNumber?.isNotEmpty == true
+          ? normalizedNumber
+          : null,
+      dateOfBirth: dateOfBirth?.trim(),
+      placeOfBirth: placeOfBirth?.trim(),
+      expirationDate: expirationDate,
+      expiryDate: expirationDate,
       localImagePath: target.path,
       isLocal: true,
       status: 'verified_by_admin',
