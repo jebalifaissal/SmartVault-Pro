@@ -314,6 +314,8 @@ class _HomeScreenState extends State<HomeScreen> {
         documentType: document.documentType ?? 'UNKNOWN',
         imageBytes: imageBytes,
         imageMimeType: imageMimeType,
+        backImageBytes: backImageBytes,
+        backImageMimeType: backImageMimeType,
       );
 
       await repository.markClassificationRequestSubmitted(
@@ -352,6 +354,11 @@ class _HomeScreenState extends State<HomeScreen> {
         }
 
         final imageBytes = await imageFile.readAsBytes();
+        final backImagePath = request.backImagePath;
+        final backImageFile = backImagePath == null ? null : File(backImagePath);
+        final backImageBytes = backImageFile != null && await backImageFile.exists()
+            ? await backImageFile.readAsBytes()
+            : null;
 
         await api.submitClassificationRequest(
           id: request.id,
@@ -360,6 +367,8 @@ class _HomeScreenState extends State<HomeScreen> {
           documentType: request.documentType,
           imageBytes: imageBytes,
           imageMimeType: request.imageMimeType,
+          backImageBytes: backImageBytes,
+          backImageMimeType: backImageBytes == null ? null : request.backImageMimeType,
         );
 
         await repository.markClassificationRequestSubmitted(
