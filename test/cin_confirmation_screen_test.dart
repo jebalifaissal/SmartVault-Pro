@@ -68,8 +68,9 @@ void main() {
       ),
       'AMINA MODIFIÉE',
     );
-    await tester.ensureVisible(find.text('Oui, confirmer'));
-    await tester.tap(find.text('Oui, confirmer'));
+    const saveButton = find.text('Confirmer et Enregistrer la CIN');
+    await tester.ensureVisible(saveButton);
+    await tester.tap(saveButton);
     await tester.pumpAndSettle();
 
     expect(savedDocument, isNotNull);
