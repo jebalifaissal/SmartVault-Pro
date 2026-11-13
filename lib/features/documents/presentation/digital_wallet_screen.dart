@@ -616,7 +616,9 @@ class _DocumentDetailsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          if (imagePath != null)
+          if (imagePath != null) ...[
+            const Text('Recto', style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
             ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: Image.file(
@@ -632,6 +634,7 @@ class _DocumentDetailsScreen extends StatelessWidget {
                 ),
               ),
             ),
+          ],
           if (document.localBackImagePath != null) ...[
             const SizedBox(height: 12),
             const Text('Verso', style: TextStyle(fontWeight: FontWeight.w700)),
