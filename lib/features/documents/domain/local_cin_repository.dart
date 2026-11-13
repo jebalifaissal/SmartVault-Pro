@@ -22,6 +22,7 @@ typedef SaveLocalDocument =
       VaultDocument document,
       Uint8List? imageBytes,
       String? imageMimeType,
+      [Uint8List? backImageBytes, String? backImageMimeType],
     );
 
 typedef UpdateLocalDocument =
@@ -63,6 +64,8 @@ abstract interface class LocalDocumentRepository {
     required VaultDocument document,
     Uint8List? imageBytes,
     String? imageMimeType,
+    Uint8List? backImageBytes,
+    String? backImageMimeType,
   });
 
   Future<VaultDocument> updateDocument({
