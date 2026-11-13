@@ -537,7 +537,7 @@ async function uploadClassificationImage(
   image: { bytes: Uint8Array; mimeType: string },
   folder = "/smartvault-classification",
   prefix = "classification",
-): Promise<string> {
+): Promise<{ path: string; fileId: string }> {
   const privateKey = env.IMAGEKIT_PRIVATE_KEY;
 
   if (!privateKey || !env.IMAGEKIT_URL_ENDPOINT) {
@@ -581,11 +581,32 @@ async function uploadClassificationImage(
 
   const result = await response.json() as Record<string, unknown>;
 
-  if (typeof result.filePath !== "string" || !result.filePath) {
-    throw new Error("ImageKit did not return a valid file path.");
+  if (
+    typeof result.filePath !== "string" ||
+    !result.filePath ||
+    typeof result.fileId !== "string" ||
+    !result.fileId
+  ) {
+    throw new Error("ImageKit did not return a valid private file reference.");
   }
 
-  return result.filePath;
+  return { path: result.filePath, fileId: result.fileId };
+}
+
+async function deleteImageKitFile(env: Env, fileId: string): Promise<void> {
+  if (!fileId || !env.IMAGEKIT_PRIVATE_KEY) return;
+  const response = await fetch(
+    `https://api.imagekit.io/v1/files/${encodeURIComponent(fileId)}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Basic ${btoa(`${env.IMAGEKIT_PRIVATE_KEY}:`)}`,
+      },
+    },
+  );
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`ImageKit file deletion failed: ${response.status}`);
+  }
 }
 
 function documentFromRow(row: Record<string, unknown>) {
@@ -911,7 +932,7 @@ export default {
         ).bind(await sha256Hex(body.token), Date.now())
           .first<{ images_json: string | null }>();
         if (!share?.images_json) return json({ success: false, error: "Shared image unavailable" }, 404);
-        const images = JSON.parse(share.images_json) as Record<string, { path: string; mime: string }>;
+        const images = JSON.parse(share.images_json) as Record<string, { path: string; fileId?: string; mime: string }>;
         const image = images[shareImageMatch[1]];
         if (!image || typeof image.path !== "string" || !image.path.startsWith("/") ||
             (image.mime !== "image/jpeg" && image.mime !== "image/png")) {
@@ -1615,17 +1636,22 @@ if (path === "/api/push/register" && request.method === "POST") {
         const expiresAt = now + duration * 60 * 1000;
         let imagesJson: string;
         try {
-          const frontPath = await uploadClassificationImage(env, frontImage!, "/smartvault-shares", "share-front");
-          const images: Record<string, { path: string; mime: string }> = {
-            front: { path: frontPath, mime: frontImage!.mimeType },
+          const uploadedFileIds: string[] = [];
+          const frontUpload = await uploadClassificationImage(env, frontImage!, "/smartvault-shares", "share-front");
+          uploadedFileIds.push(frontUpload.fileId);
+          const images: Record<string, { path: string; fileId: string; mime: string }> = {
+            front: { path: frontUpload.path, fileId: frontUpload.fileId, mime: frontImage!.mimeType },
           };
           if (backImage) {
-            const backPath = await uploadClassificationImage(env, backImage, "/smartvault-shares", "share-back");
-            images.back = { path: backPath, mime: backImage.mimeType };
+            const backUpload = await uploadClassificationImage(env, backImage, "/smartvault-shares", "share-back");
+            uploadedFileIds.push(backUpload.fileId);
+            images.back = { path: backUpload.path, fileId: backUpload.fileId, mime: backImage.mimeType };
           }
           imagesJson = JSON.stringify(images);
         } catch (error) {
           console.error("Share image upload failed:", error);
+          // Best-effort cleanup if only one side was uploaded.
+          // Access remains denied because no share record is created.
           return json({ success: false, error: "Unable to upload document photos" }, 502);
         }
         await env.smartvault_db
