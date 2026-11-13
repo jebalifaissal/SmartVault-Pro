@@ -12,6 +12,7 @@ void main() {
     'submits classification metadata and image',
     () async {
       final imageBytes = Uint8List.fromList([1, 2, 3]);
+      final backImageBytes = Uint8List.fromList([4, 5, 6]);
 
       final service = DocumentApiService(
         getAccessToken: () async => 'test-session-token',
@@ -32,6 +33,8 @@ void main() {
           expect(body['document_type'], 'PASSPORT');
           expect(body['image_base64'], 'AQID');
           expect(body['image_mime_type'], 'image/jpeg');
+          expect(body['back_image_base64'], 'BAUG');
+          expect(body['back_image_mime_type'], 'image/png');
 
           return http.Response(
             '{"success":true,"status":"PENDING"}',
@@ -47,6 +50,8 @@ void main() {
         documentType: 'PASSPORT',
         imageBytes: imageBytes,
         imageMimeType: 'image/jpeg',
+        backImageBytes: backImageBytes,
+        backImageMimeType: 'image/png',
       );
     },
   );
