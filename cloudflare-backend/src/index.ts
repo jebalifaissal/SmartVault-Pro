@@ -1138,6 +1138,10 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
     const adm = await authenticatedAdmin(request, env);
     if (!adm) return json({ success: false, error: "Admin authentication required" }, 401);
 
+    if (!env.IMAGEKIT_PRIVATE_KEY || !env.IMAGEKIT_URL_ENDPOINT) {
+      return json({ success: false, error: "Classification photo storage is not available." }, 503);
+    }
+
     const suffix = isBackPhoto ? "/back-photo" : "/photo";
     const requestId = path.slice(photoPfx.length, -suffix.length);
     if (!requestId || requestId.includes("/")) {
