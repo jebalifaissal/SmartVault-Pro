@@ -1161,7 +1161,7 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
           const placeOfBirth = accepted ? optionalMetadata(body.place_of_birth) : null;
           const expirationDate = accepted ? optionalMetadata(body.expiration_date, 10) : null;
           const validDate = (value: string | null) =>
-            value === null || /^\\d{4}-\\d{2}-\\d{2}$/.test(value);
+            value === null || /^\d{4}-\d{2}-\d{2}$/.test(value);
 
           if (!validDate(dateOfBirth) || !validDate(expirationDate)) {
             return json({ success: false, error: "Invalid identity date" }, 400);
