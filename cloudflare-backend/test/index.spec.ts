@@ -83,6 +83,8 @@ beforeAll(async () => {
 			document_type TEXT NOT NULL,
 			image_key TEXT NOT NULL,
 			image_mime_type TEXT NOT NULL,
+			back_image_key TEXT,
+back_image_mime_type TEXT,
 			status TEXT NOT NULL DEFAULT 'PENDING',
 			security_level TEXT,
 			category TEXT,

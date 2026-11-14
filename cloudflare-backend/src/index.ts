@@ -953,7 +953,17 @@ export default {
           const imageResponse = await fetch(
             `${endpoint}${image.path}?ik-t=${expiresAt}&ik-s=${signature}`,
           );
-          if (!imageResponse.ok) return json({ success: false, error: "Image retrieval failed" }, 502);
+          if (!imageResponse.ok) {
+  console.error("SHARE IMAGE UPSTREAM ERROR", {
+    status: imageResponse.status,
+    contentType: imageResponse.headers.get("content-type"),
+  });
+
+  return json(
+    { success: false, error: "Image retrieval failed" },
+    502,
+  );
+}
           return new Response(imageResponse.body, {
             headers: {
               ...corsHeaders,
@@ -963,9 +973,17 @@ export default {
               "Content-Disposition": "inline",
             },
           });
-        } catch {
-          return json({ success: false, error: "Image retrieval failed" }, 502);
-        }
+        }  catch (error) {
+  console.error(
+    "SHARE IMAGE EXCEPTION",
+    error instanceof Error ? error.name : "UnknownError",
+  );
+
+  return json(
+    { success: false, error: "Image retrieval failed" },
+    502,
+  );
+}
       }
 
       if (path === "/share" && request.method === "GET") {
@@ -1174,7 +1192,7 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
       );
       const signature = Array.from(new Uint8Array(signatureBuffer))
         .map((byte) => byte.toString(16).padStart(2, "0")).join("");
-      const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\\/+$/, "");
+      const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\/+$/, "");
       const imageUrl = `${endpoint}${record.image_key}?ik-t=${expiresAt}&ik-s=${signature}`;
       const imageResponse = await fetch(imageUrl);
       if (!imageResponse.ok) {
