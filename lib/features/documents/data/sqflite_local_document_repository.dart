@@ -417,6 +417,15 @@ class SqfliteLocalDocumentRepository
     await source.copy(target.path);
     final backSourcePath = row['back_image_path'] as String?;
     final backSource = backSourcePath == null ? null : File(backSourcePath);
+    final requiresBackImage = category == 'Pièce d’identité';
+    if (requiresBackImage &&
+        (backSource == null || !await backSource.exists())) {
+      await target.delete();
+      throw StateError(
+        'La photo Verso de votre CIN est manquante. '
+        'La carte ne peut pas être ajoutée au portefeuille sans les deux faces.',
+      );
+    }
     File? backTarget;
     if (backSource != null && await backSource.exists()) {
       final backMime = row['back_image_mime_type'] as String? ?? 'image/jpeg';
