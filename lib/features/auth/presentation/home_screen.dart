@@ -78,7 +78,10 @@ class _HomeScreenState extends State<HomeScreen> {
     _listenToDocuments();
     _classificationSyncTimer = Timer.periodic(
       const Duration(seconds: 20),
-      (_) => unawaited(_syncPendingClassifications()),
+      (_) {
+        unawaited(_syncPendingClassifications());
+        unawaited(_loadNotifications());
+      },
     );
     unawaited(_syncPendingClassifications());
     unawaited(_loadNotifications());
@@ -378,7 +381,8 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       pending = await repository.pendingClassificationRequests(widget.user.id);
-      if (pending.isEmpty) return;
+      // Always refresh server decisions, even when no local pending row remains.
+      // The notification feed is refreshed independently below as well.
       final remoteRequests = await api.getMyClassificationRequests();
       _lastClassificationSyncError = null;
       final remoteById = {
@@ -516,8 +520,9 @@ class _HomeScreenState extends State<HomeScreen> {
         // Réinitialise le dismiss si on a de nouvelles notifs non lues
         if (result.unreadCount > 0) _notifBannerDismissed = false;
       });
-    } catch (_) {
-      // Silencieux — les notifications sont optionnelles
+    } catch (error, stackTrace) {
+      debugPrint('User notifications refresh failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
