@@ -113,6 +113,12 @@ back_image_mime_type TEXT,
 			rejection_reason TEXT,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			expires_at TEXT NOT NULL,
+			first_name TEXT,
+			last_name TEXT,
+			document_number TEXT,
+			date_of_birth TEXT,
+			place_of_birth TEXT,
+			expiration_date TEXT,
 			decided_at TEXT,
 			decided_by TEXT
 		)`,
@@ -646,7 +652,8 @@ it("creates temporary image shares without exposing another user's cloud documen
 					id: requestId,
 					title: "Passport",
 					document_type: "PASSPORT",
-					
+					image_base64: "AQID",
+					image_mime_type: "image/jpeg",
 				}),
 			},
 		);
@@ -661,7 +668,7 @@ it("creates temporary image shares without exposing another user's cloud documen
 		expect(storedRequest).toEqual({ image_key: "", image_mime_type: "" });
 
 		const admin = await createAccount("classification-admin@example.com", true);
-		const adminLogin = await login(admin.email, admin.password);
+		const adminLogin = await loginAdmin(admin.email, admin.password);
 		const adminToken = (await adminLogin.json() as { token: string }).token;
 		const photoResponse = await SELF.fetch(
 			`https://example.com/api/admin/classification-requests/${requestId}/photo`,
@@ -705,7 +712,7 @@ it("creates temporary image shares without exposing another user's cloud documen
 
 	it("marks expired pending classification requests when Admin loads the inbox", async () => {
 		const admin = await createAccount("classification-expiry-admin@example.com", true);
-		const adminLogin = await login(admin.email, admin.password);
+		const adminLogin = await loginAdmin(admin.email, admin.password);
 		const adminToken = (await adminLogin.json() as { token: string }).token;
 		const requestId = crypto.randomUUID();
 		await env.smartvault_db
