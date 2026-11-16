@@ -515,10 +515,18 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final result = await api.getMyNotifications();
       if (!mounted) return;
+      final previousUnreadIds = _notifications
+          .where((notification) => !notification.isRead)
+          .map((notification) => notification.id)
+          .toSet();
+      final hasNewUnreadNotification = result.notifications.any(
+        (notification) =>
+            !notification.isRead &&
+            !previousUnreadIds.contains(notification.id),
+      );
       setState(() {
         _notifications = result.notifications;
-        // Réinitialise le dismiss si on a de nouvelles notifs non lues
-        if (result.unreadCount > 0) _notifBannerDismissed = false;
+        if (hasNewUnreadNotification) _notifBannerDismissed = false;
       });
     } catch (error, stackTrace) {
       debugPrint('User notifications refresh failed: $error');
