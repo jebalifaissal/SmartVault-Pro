@@ -1000,11 +1000,19 @@ const photos = document.getElementById('photos');
 const labels = {category:'Catégorie',holderName:'Titulaire',firstName:'Prénom',lastName:'Nom',documentNumber:'Numéro du document',dateOfBirth:'Date de naissance',placeOfBirth:'Lieu de naissance',expirationDate:'Date d’expiration'};
 const token = location.hash.slice(1);
 history.replaceState(null, '', location.pathname);
-fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})})
+fetch('/api/shares/open', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ token })
+})
   .then(async response => {
     const data = await response.json();
-    if (!response.ok || !data.success || typeof data.fields !== 'object') throw new Error();
+    if (!response.ok || !data.success || !data.fields || typeof data.fields !== 'object') {
+      throw new Error('Lien invalide (HTTP ' + response.status + ')');
+    }
+
     status.textContent = 'Ce lien est temporaire. Les photos Recto et Verso sont protégées et expireront avec le partage.';
+
     for (const [key, value] of Object.entries(data.fields)) {
       if (typeof value !== 'string' || !labels[key]) continue;
       const label = document.createElement('dt');
@@ -1013,21 +1021,52 @@ fetch('/api/shares/open', {method:'POST',headers:{'Content-Type':'application/js
       item.textContent = value;
       fields.append(label, item);
     }
+
     for (const side of ['front', 'back']) {
       if (!Array.isArray(data.images) || !data.images.includes(side)) continue;
+
       const heading = document.createElement('h2');
       heading.textContent = side === 'front' ? 'Recto' : 'Verso';
       const image = document.createElement('img');
       image.alt = heading.textContent;
       image.style.cssText = 'display:block;width:100%;height:auto;max-height:420px;object-fit:contain;margin:8px 0 20px;border:1px solid #e5ebeb;border-radius:12px';
       photos.append(heading, image);
-      fetch('/api/shares/image/' + side, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})})
-        .then(response => { if (!response.ok) throw new Error(); return response.blob(); })
-        .then(blob => { image.src = URL.createObjectURL(blob); })
-        .catch(() => { image.alt = 'Photo indisponible ou partage expiré'; });
+
+      try {
+        const imageResponse = await fetch('/api/shares/image/' + side, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token })
+        });
+        if (!imageResponse.ok) {
+          throw new Error('HTTP ' + imageResponse.status);
+        }
+
+        const contentType = imageResponse.headers.get('content-type') || '';
+        if (!contentType.startsWith('image/')) {
+          throw new Error('Réponse non-image: ' + contentType);
+        }
+
+        const blob = await imageResponse.blob();
+        if (!blob.size) throw new Error('Image vide');
+
+        const imageUrl = URL.createObjectURL(blob);
+        image.onload = () => URL.revokeObjectURL(imageUrl);
+        image.onerror = () => {
+          URL.revokeObjectURL(imageUrl);
+          image.alt = 'Impossible d’afficher cette image';
+        };
+        image.src = imageUrl;
+      } catch (error) {
+        console.error('Erreur chargement image ' + side + ':', error);
+        image.alt = 'Photo indisponible ou partage expiré';
+      }
     }
   })
-  .catch(() => { status.textContent = 'Ce lien est invalide, révoqué ou expiré.'; });
+  .catch(error => {
+    console.error('Erreur vérification partage:', error);
+    status.textContent = 'Ce lien est invalide, révoqué ou expiré.';
+  });
 </script></html>`,
           {
             headers: {
