@@ -403,7 +403,9 @@ class _HomeScreenState extends State<HomeScreen> {
           }
 
           // توحيد الفاصلة العليا حتى تتطابق مع VaultDocument.categories
-          final category = rawCategory.trim().replaceAll("'", "’");
+          final category = rawCategory.trim()
+              .replaceAll(RegExp("[’‘]"), "'")
+              .replaceAll("'", "’");
           debugPrint('CLASSIFICATION DEBUG:');
           debugPrint('category = $category');
           debugPrint('security_level = $level');
