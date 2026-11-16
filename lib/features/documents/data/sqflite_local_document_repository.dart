@@ -667,6 +667,23 @@ class SqfliteLocalDocumentRepository
     );
   }
 
+  Future<void> _ensureColumnExists(
+    DatabaseExecutor database,
+    String tableName,
+    String columnName,
+    String columnType,
+  ) async {
+    final columns = await database.rawQuery('PRAGMA table_info($tableName)');
+    final exists = columns.any(
+      (column) => column['name'] == columnName,
+    );
+    if (!exists) {
+      await database.execute(
+        'ALTER TABLE $tableName ADD COLUMN $columnName $columnType',
+      );
+    }
+  }
+
   Future<void> _createPendingClassificationTable(DatabaseExecutor database) =>
       database.execute('''
     CREATE TABLE pending_classification_requests (
