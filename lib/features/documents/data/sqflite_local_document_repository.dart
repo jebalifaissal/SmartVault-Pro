@@ -641,11 +641,26 @@ class SqfliteLocalDocumentRepository
             await _createPendingClassificationTable(database);
           }
           if (oldVersion >= 2 && oldVersion < 5) {
-            await database.execute('ALTER TABLE $_tableName ADD COLUMN back_image_path TEXT');
+            await _ensureColumnExists(
+              database,
+              _tableName,
+              'back_image_path',
+              'TEXT',
+            );
           }
           if (oldVersion >= 4 && oldVersion < 6) {
-            await database.execute('ALTER TABLE pending_classification_requests ADD COLUMN back_image_path TEXT');
-            await database.execute('ALTER TABLE pending_classification_requests ADD COLUMN back_image_mime_type TEXT');
+            await _ensureColumnExists(
+              database,
+              'pending_classification_requests',
+              'back_image_path',
+              'TEXT',
+            );
+            await _ensureColumnExists(
+              database,
+              'pending_classification_requests',
+              'back_image_mime_type',
+              'TEXT',
+            );
           }
         },
       ),
