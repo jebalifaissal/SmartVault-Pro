@@ -452,8 +452,10 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         }
       }
-    } on Exception catch (error) {
+    } catch (error, stackTrace) {
       final message = error.toString();
+      debugPrint('Classification synchronization failed: $message');
+      debugPrintStack(stackTrace: stackTrace);
       if (mounted && message != _lastClassificationSyncError) {
         _lastClassificationSyncError = message;
         ScaffoldMessenger.of(context).showSnackBar(
