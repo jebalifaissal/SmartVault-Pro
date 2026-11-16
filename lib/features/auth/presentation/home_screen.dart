@@ -516,17 +516,28 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadNotifications() async {
     final api = widget.classificationApi;
     if (api == null) return;
+
+    // The notifications feed is the primary source. Keep it visible even if
+    // the optional classification-request fallback endpoint is unavailable.
+    late final List<UserNotification> loadedNotifications;
     try {
       final result = await api.getMyNotifications();
+      loadedNotifications = result.notifications;
+    } catch (error, stackTrace) {
+      debugPrint('User notifications request failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      return;
+    }
 
-      // Fallback: reconstruire les messages de décision depuis les demandes
-      // serveur si l'insertion dans user_notifications a échoué ou si le
-      // Worker déployé ne possède pas encore cette ligne de notification.
+    final notificationsByRequest = <String, UserNotification>{
+      for (final notification in loadedNotifications)
+        notification.requestId: notification,
+    };
+
+    // Fallback only: rebuild a decision message when the backend feed has no
+    // notification for a request. Failure here must never hide the real feed.
+    try {
       final remoteRequests = await api.getMyClassificationRequests();
-      final notificationsByRequest = <String, UserNotification>{
-        for (final notification in result.notifications)
-          notification.requestId: notification,
-      };
       for (final request in remoteRequests) {
         final id = request['id'];
         final status = request['status'];
@@ -535,6 +546,7 @@ class _HomeScreenState extends State<HomeScreen> {
             notificationsByRequest.containsKey(id)) {
           continue;
         }
+
         final accepted = status == 'ADMIN_REVIEWED';
         final title = request['title'] is String
             ? request['title'] as String
@@ -546,10 +558,13 @@ class _HomeScreenState extends State<HomeScreen> {
         final createdAt = rawDate is int
             ? DateTime.fromMillisecondsSinceEpoch(rawDate)
             : DateTime.tryParse(rawDate?.toString() ?? '') ?? DateTime.now();
+
         notificationsByRequest[id] = UserNotification(
           id: 'decision-$id',
           type: accepted ? 'document_accepted' : 'document_rejected',
-          title: accepted ? 'Document accepté : $title' : 'Document refusé : $title',
+          title: accepted
+              ? 'Document accepté : $title'
+              : 'Document refusé : $title',
           body: accepted
               ? 'Votre document a été classifié${category == null ? '' : ' dans « $category »'}${level == null ? '.' : ' (niveau $level).'}'
               : 'Votre demande a été refusée.${reason == null || reason.isEmpty ? '' : ' Motif : $reason'}',
@@ -560,26 +575,29 @@ class _HomeScreenState extends State<HomeScreen> {
           securityLevel: accepted ? level : null,
         );
       }
-      final refreshedNotifications = notificationsByRequest.values.toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      if (!mounted) return;
-      final previousUnreadIds = _notifications
-          .where((notification) => !notification.isRead)
-          .map((notification) => notification.id)
-          .toSet();
-      final hasNewUnreadNotification = refreshedNotifications.any(
-        (notification) =>
-            !notification.isRead &&
-            !previousUnreadIds.contains(notification.id),
-      );
-      setState(() {
-        _notifications = refreshedNotifications;
-        if (hasNewUnreadNotification) _notifBannerDismissed = false;
-      });
     } catch (error, stackTrace) {
-      debugPrint('User notifications refresh failed: $error');
+      debugPrint('Classification notification fallback failed: $error');
       debugPrintStack(stackTrace: stackTrace);
     }
+
+    final refreshedNotifications = notificationsByRequest.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    if (!mounted) return;
+
+    final previousUnreadIds = _notifications
+        .where((notification) => !notification.isRead)
+        .map((notification) => notification.id)
+        .toSet();
+    final hasNewUnreadNotification = refreshedNotifications.any(
+      (notification) =>
+          !notification.isRead &&
+          !previousUnreadIds.contains(notification.id),
+    );
+
+    setState(() {
+      _notifications = refreshedNotifications;
+      if (hasNewUnreadNotification) _notifBannerDismissed = false;
+    });
   }
 
   Future<void> _dismissNotificationBanner() async {
