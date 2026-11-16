@@ -64,7 +64,9 @@ class _AdminInboxScreenState extends State<AdminInboxScreen>
 
   Future<void> _refresh() async {
     final requests = widget.api.getPendingClassificationRequests();
-    setState(() => _requests = requests);
+    setState(() {
+      _requests = requests;
+    });
     await requests;
   }
 
