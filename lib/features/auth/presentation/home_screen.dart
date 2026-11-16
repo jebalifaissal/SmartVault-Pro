@@ -516,18 +516,62 @@ class _HomeScreenState extends State<HomeScreen> {
     if (api == null) return;
     try {
       final result = await api.getMyNotifications();
+
+      // Fallback: reconstruire les messages de décision depuis les demandes
+      // serveur si l'insertion dans user_notifications a échoué ou si le
+      // Worker déployé ne possède pas encore cette ligne de notification.
+      final remoteRequests = await api.getMyClassificationRequests();
+      final notificationsByRequest = <String, UserNotification>{
+        for (final notification in result.notifications)
+          notification.requestId: notification,
+      };
+      for (final request in remoteRequests) {
+        final id = request['id'];
+        final status = request['status'];
+        if (id is! String ||
+            (status != 'ADMIN_REVIEWED' && status != 'REJECTED') ||
+            notificationsByRequest.containsKey(id)) {
+          continue;
+        }
+        final accepted = status == 'ADMIN_REVIEWED';
+        final title = request['title'] is String
+            ? request['title'] as String
+            : 'votre document';
+        final category = request['category'] as String?;
+        final level = request['security_level'] as String?;
+        final reason = request['rejection_reason'] as String?;
+        final rawDate = request['created_at'];
+        final createdAt = rawDate is int
+            ? DateTime.fromMillisecondsSinceEpoch(rawDate)
+            : DateTime.tryParse(rawDate?.toString() ?? '') ?? DateTime.now();
+        notificationsByRequest[id] = UserNotification(
+          id: 'decision-$id',
+          type: accepted ? 'document_accepted' : 'document_rejected',
+          title: accepted ? 'Document accepté : $title' : 'Document refusé : $title',
+          body: accepted
+              ? 'Votre document a été classifié${category == null ? '' : ' dans « $category »'}${level == null ? '.' : ' (niveau $level).'}'
+              : 'Votre demande a été refusée.${reason == null || reason.isEmpty ? '' : ' Motif : $reason'}',
+          requestId: id,
+          isRead: false,
+          createdAt: createdAt,
+          category: accepted ? category : null,
+          securityLevel: accepted ? level : null,
+        );
+      }
+      final refreshedNotifications = notificationsByRequest.values.toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
       if (!mounted) return;
       final previousUnreadIds = _notifications
           .where((notification) => !notification.isRead)
           .map((notification) => notification.id)
           .toSet();
-      final hasNewUnreadNotification = result.notifications.any(
+      final hasNewUnreadNotification = refreshedNotifications.any(
         (notification) =>
             !notification.isRead &&
             !previousUnreadIds.contains(notification.id),
       );
       setState(() {
-        _notifications = result.notifications;
+        _notifications = refreshedNotifications;
         if (hasNewUnreadNotification) _notifBannerDismissed = false;
       });
     } catch (error, stackTrace) {
