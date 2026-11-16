@@ -28,8 +28,8 @@ async function createAccount(email: string, isAdmin = false) {
 		.run();
 	if (isAdmin) {
 		await env.smartvault_db
-			.prepare("INSERT INTO admin_users (email, active, user_id) VALUES (?, 1, ?)")
-			.bind(email, id)
+			.prepare("INSERT INTO admin_users (email, active, user_id, password_salt, password_hash) VALUES (?, 1, ?, ?, ?)")
+			.bind(email, id, salt, await hashPassword(password, salt))
 			.run();
 	}
 	return { id, email, password };
@@ -37,6 +37,14 @@ async function createAccount(email: string, isAdmin = false) {
 
 async function login(email: string, password: string) {
 	return SELF.fetch("https://example.com/api/auth/login", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ email, password }),
+	});
+}
+
+async function loginAdmin(email: string, password: string) {
+	return SELF.fetch("https://example.com/api/admin/login", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ email, password }),
@@ -72,7 +80,21 @@ beforeAll(async () => {
 		`CREATE TABLE admin_users (
 			email TEXT PRIMARY KEY NOT NULL,
 			active INTEGER NOT NULL DEFAULT 1,
-			user_id TEXT
+			user_id TEXT,
+			password_salt TEXT,
+			password_hash TEXT
+		)`,
+		`CREATE TABLE admin_sessions (
+			token_hash TEXT PRIMARY KEY NOT NULL,
+			admin_email TEXT NOT NULL,
+			expires_at INTEGER NOT NULL,
+			created_at INTEGER NOT NULL,
+			revoked_at INTEGER
+		)`,
+		`CREATE TABLE admin_login_attempts (
+			key_hash TEXT PRIMARY KEY NOT NULL,
+			attempts INTEGER NOT NULL,
+			window_start INTEGER NOT NULL
 		)`,
 		`CREATE TABLE classification_requests (
 			id TEXT PRIMARY KEY NOT NULL,
@@ -537,7 +559,7 @@ it("creates temporary image shares without exposing another user's cloud documen
 		const admin = await createAccount("classification-two-sides-admin@example.com", true);
 		const userLogin = await login(user.email, user.password);
 		const userToken = (await userLogin.json() as { token: string }).token;
-		const adminLogin = await login(admin.email, admin.password);
+		const adminLogin = await loginAdmin(admin.email, admin.password);
 		const adminToken = (await adminLogin.json() as { token: string }).token;
 		const requestId = crypto.randomUUID();
 		const originalFetch = globalThis.fetch;
@@ -624,8 +646,7 @@ it("creates temporary image shares without exposing another user's cloud documen
 					id: requestId,
 					title: "Passport",
 					document_type: "PASSPORT",
-					image_mime_type: "image/jpeg",
-					image_base64: "ignored-image-data",
+					
 				}),
 			},
 		);
@@ -725,7 +746,7 @@ it("creates temporary image shares without exposing another user's cloud documen
 
 	it("grants Admin only to the D1-linked account identity", async () => {
 		const admin = await createAccount("admin@example.com", true);
-		const response = await login(admin.email, admin.password);
+		const response = await loginAdmin(admin.email, admin.password);
 		const body = await response.json() as { token: string; isAdmin: boolean };
 		expect(body.isAdmin).toBe(true);
 
