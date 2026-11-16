@@ -632,10 +632,14 @@ it("creates temporary image shares without exposing another user's cloud documen
 			expect(Array.from(new Uint8Array(await backPhoto.arrayBuffer()))).toEqual([7, 8, 9]);
 		} finally {
 			vi.unstubAllGlobals();
+			delete (env as Record<string, unknown>).IMAGEKIT_PRIVATE_KEY;
+			delete (env as Record<string, unknown>).IMAGEKIT_URL_ENDPOINT;
 		}
 	});
 
 	it("keeps classification requests in D1 without photos and logs Admin decisions", async () => {
+		delete (env as Record<string, unknown>).IMAGEKIT_PRIVATE_KEY;
+		delete (env as Record<string, unknown>).IMAGEKIT_URL_ENDPOINT;
 		const user = await createAccount("classification-user@example.com");
 		const userLogin = await login(user.email, user.password);
 		const userToken = (await userLogin.json() as { token: string }).token;
