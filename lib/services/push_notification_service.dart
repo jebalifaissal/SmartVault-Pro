@@ -25,7 +25,7 @@ class PushNotificationService {
       const initializationSettings = InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
       );
-      await _localNotifications.initialize(initializationSettings);
+      await _localNotifications.initialize(settings: initializationSettings);
       await _localNotifications
           .resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>()
@@ -73,10 +73,10 @@ class PushNotificationService {
               'Une mise à jour de votre document est disponible.';
           try {
             await _localNotifications.show(
-              message.hashCode,
-              title,
-              body,
-              NotificationDetails(
+              id: message.hashCode,
+              title: title,
+              body: body,
+              notificationDetails: NotificationDetails(
                 android: AndroidNotificationDetails(
                   _channel.id,
                   _channel.name,
