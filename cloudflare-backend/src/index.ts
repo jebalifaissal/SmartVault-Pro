@@ -1088,14 +1088,14 @@ fetch('/api/shares/open', {
       if (path === "/api/public-documents" && request.method === "GET") {
         const result = await env.smartvault_db
           .prepare(
-            \`SELECT id, title, category, created_at,
+            `SELECT id, title, category, created_at,
                     CASE WHEN back_image_key IS NOT NULL AND back_image_key != '' THEN 1 ELSE 0 END AS has_back_image
              FROM classification_requests
              WHERE status = 'ADMIN_REVIEWED'
                AND security_level = 'MEDIUM'
                AND category IN ('Diplôme', 'Cours', 'Notes', 'Informations', 'Autres')
                AND image_key IS NOT NULL AND image_key != ''
-             ORDER BY decided_at DESC, created_at DESC\`,
+             ORDER BY decided_at DESC, created_at DESC`,
           )
           .all();
         return json({
@@ -1107,7 +1107,7 @@ fetch('/api/shares/open', {
             created_at: row.created_at,
             has_back_image: Number(row.has_back_image) === 1,
           })),
-        }, 200, { "Cache-Control": "no-store" });
+        }, 200);
       }
 
       {
@@ -1133,14 +1133,14 @@ fetch('/api/shares/open', {
 
           const record = await env.smartvault_db
             .prepare(isBackPhoto
-              ? \`SELECT back_image_key AS image_key, back_image_mime_type AS image_mime_type
+              ? `SELECT back_image_key AS image_key, back_image_mime_type AS image_mime_type
                  FROM classification_requests
                  WHERE id = ? AND status = 'ADMIN_REVIEWED' AND security_level = 'MEDIUM'
-                   AND category IN ('Diplôme', 'Cours', 'Notes', 'Informations', 'Autres')\`
-              : \`SELECT image_key, image_mime_type
+                   AND category IN ('Diplôme', 'Cours', 'Notes', 'Informations', 'Autres')`
+              : `SELECT image_key, image_mime_type
                  FROM classification_requests
                  WHERE id = ? AND status = 'ADMIN_REVIEWED' AND security_level = 'MEDIUM'
-                   AND category IN ('Diplôme', 'Cours', 'Notes', 'Informations', 'Autres')\`)
+                   AND category IN ('Diplôme', 'Cours', 'Notes', 'Informations', 'Autres')`)
             .bind(requestId)
             .first<{ image_key: string | null; image_mime_type: string | null }>();
 
@@ -1166,13 +1166,13 @@ fetch('/api/shares/open', {
             const signatureBuffer = await crypto.subtle.sign(
               "HMAC",
               key,
-              new TextEncoder().encode(\`\${record.image_key}\${expiresAt}\`),
+              new TextEncoder().encode(`${record.image_key}${expiresAt}`),
             );
             const signature = Array.from(new Uint8Array(signatureBuffer))
               .map((byte) => byte.toString(16).padStart(2, "0"))
               .join("");
             const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\\/+$/, "");
-            const imageUrl = \`\${endpoint}\${record.image_key}?ik-t=\${expiresAt}&ik-s=\${signature}\`;
+            const imageUrl = `${endpoint}${record.image_key}?ik-t=${expiresAt}&ik-s=${signature}`;
             const imageResponse = await fetch(imageUrl);
             if (!imageResponse.ok) {
               return json({ success: false, error: "Unable to retrieve public document image" }, 502);
