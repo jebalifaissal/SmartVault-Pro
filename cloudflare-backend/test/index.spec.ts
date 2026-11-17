@@ -195,6 +195,36 @@ back_image_mime_type TEXT,
 });
 
 describe("SmartVault Worker", () => {
+	it("exposes only Admin-approved MEDIUM classification requests to guests", async () => {
+		const now = new Date().toISOString();
+		const rows = [
+			["public-medium", "ADMIN_REVIEWED", "MEDIUM", "Cours", "/public-medium.jpg"],
+			["private-high", "ADMIN_REVIEWED", "HIGH", "Pièce d’identité", "/private-high.jpg"],
+			["still-pending", "PENDING", null, null, "/pending.jpg"],
+			["rejected-medium", "REJECTED", null, null, "/rejected.jpg"],
+			["no-photo-medium", "ADMIN_REVIEWED", "MEDIUM", "Notes", ""],
+		];
+		for (const [id, status, level, category, imageKey] of rows) {
+			await env.smartvault_db.prepare(
+				`INSERT INTO classification_requests
+					 (id, user_id, user_email, title, document_type, image_key,
+					  image_mime_type, status, security_level, category, expires_at)
+					 VALUES (?, ?, ?, ?, ?, ?, 'image/jpeg', ?, ?, ?, ?)`,
+			).bind(id, "owner-" + id, "owner@example.com", id, "PHOTO",
+				imageKey, status, level, category, now).run();
+		}
+
+		const response = await SELF.fetch("https://example.com/api/public-documents");
+		expect(response.status).toBe(200);
+		const body = await response.json() as {
+			documents: Array<{ id: string; category: string }>;
+		};
+		expect(body.documents).toEqual([
+			expect.objectContaining({ id: "public-medium", category: "Cours" }),
+		]);
+	});
+
+
 	it("reports that the API is running", async () => {
 		const request = new IncomingRequest("http://example.com/");
 		const ctx = createExecutionContext();
