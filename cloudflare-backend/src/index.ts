@@ -1175,7 +1175,17 @@ fetch('/api/shares/open', {
             const imageUrl = `${endpoint}${record.image_key}?ik-t=${expiresAt}&ik-s=${signature}`;
             const imageResponse = await fetch(imageUrl);
             if (!imageResponse.ok) {
-              return json({ success: false, error: "Unable to retrieve public document image" }, 502);
+              console.error("PUBLIC DOCUMENT IMAGEKIT UPSTREAM ERROR", {
+                documentId: requestId,
+                side: isBackPhoto ? "back" : "front",
+                status: imageResponse.status,
+                contentType: imageResponse.headers.get("content-type"),
+              });
+              return json({
+                success: false,
+                error: "Image storage rejected the signed photo request.",
+                upstream_status: imageResponse.status,
+              }, 502);
             }
             return new Response(imageResponse.body, {
               status: 200,
@@ -1187,7 +1197,12 @@ fetch('/api/shares/open', {
                 "Content-Disposition": "inline",
               },
             });
-          } catch {
+          } catch (error) {
+            console.error("PUBLIC DOCUMENT PHOTO RETRIEVAL FAILED", {
+              documentId: requestId,
+              side: isBackPhoto ? "back" : "front",
+              error: error instanceof Error ? error.message : String(error),
+            });
             return json({ success: false, error: "Public document photo retrieval failed" }, 502);
           }
         }
