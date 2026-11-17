@@ -1082,6 +1082,117 @@ fetch('/api/shares/open', {
         );
       }
 
+      // ── Public documents: only Admin-approved MEDIUM requests ────────────
+      // These routes intentionally require no user session. A document becomes
+      // public only after an Admin accepts it with security_level = MEDIUM.
+      if (path === "/api/public-documents" && request.method === "GET") {
+        const result = await env.smartvault_db
+          .prepare(
+            \`SELECT id, title, category, created_at,
+                    CASE WHEN back_image_key IS NOT NULL AND back_image_key != '' THEN 1 ELSE 0 END AS has_back_image
+             FROM classification_requests
+             WHERE status = 'ADMIN_REVIEWED'
+               AND security_level = 'MEDIUM'
+               AND category IN ('Diplôme', 'Cours', 'Notes', 'Informations', 'Autres')
+               AND image_key IS NOT NULL AND image_key != ''
+             ORDER BY decided_at DESC, created_at DESC\`,
+          )
+          .all();
+        return json({
+          success: true,
+          documents: result.results.map((row) => ({
+            id: row.id,
+            title: row.title,
+            category: row.category,
+            created_at: row.created_at,
+            has_back_image: Number(row.has_back_image) === 1,
+          })),
+        }, 200, { "Cache-Control": "no-store" });
+      }
+
+      {
+        const publicPhotoPrefix = "/api/public-documents/";
+        const isBackPhoto = path.endsWith("/back-photo");
+        const isFrontPhoto = path.endsWith("/photo");
+        if (
+          path.startsWith(publicPhotoPrefix) &&
+          (isFrontPhoto || isBackPhoto) &&
+          request.method === "GET"
+        ) {
+          if (!env.IMAGEKIT_PRIVATE_KEY || !env.IMAGEKIT_URL_ENDPOINT) {
+            return json({ success: false, error: "Public document photo storage is not available." }, 503);
+          }
+
+          const suffix = isBackPhoto ? "/back-photo" : "/photo";
+          const requestId = decodeURIComponent(
+            path.slice(publicPhotoPrefix.length, -suffix.length),
+          );
+          if (!requestId || requestId.includes("/")) {
+            return json({ success: false, error: "Invalid document ID" }, 400);
+          }
+
+          const record = await env.smartvault_db
+            .prepare(isBackPhoto
+              ? \`SELECT back_image_key AS image_key, back_image_mime_type AS image_mime_type
+                 FROM classification_requests
+                 WHERE id = ? AND status = 'ADMIN_REVIEWED' AND security_level = 'MEDIUM'
+                   AND category IN ('Diplôme', 'Cours', 'Notes', 'Informations', 'Autres')\`
+              : \`SELECT image_key, image_mime_type
+                 FROM classification_requests
+                 WHERE id = ? AND status = 'ADMIN_REVIEWED' AND security_level = 'MEDIUM'
+                   AND category IN ('Diplôme', 'Cours', 'Notes', 'Informations', 'Autres')\`)
+            .bind(requestId)
+            .first<{ image_key: string | null; image_mime_type: string | null }>();
+
+          if (!record || !record.image_key) {
+            return json({ success: false, error: "Public document photo not found" }, 404);
+          }
+          if (
+            !record.image_key.startsWith("/") ||
+            (record.image_mime_type !== "image/jpeg" && record.image_mime_type !== "image/png")
+          ) {
+            return json({ success: false, error: "Invalid stored image information" }, 500);
+          }
+
+          try {
+            const expiresAt = Math.floor(Date.now() / 1000) + 60;
+            const key = await crypto.subtle.importKey(
+              "raw",
+              new TextEncoder().encode(env.IMAGEKIT_PRIVATE_KEY),
+              { name: "HMAC", hash: "SHA-1" },
+              false,
+              ["sign"],
+            );
+            const signatureBuffer = await crypto.subtle.sign(
+              "HMAC",
+              key,
+              new TextEncoder().encode(\`\${record.image_key}\${expiresAt}\`),
+            );
+            const signature = Array.from(new Uint8Array(signatureBuffer))
+              .map((byte) => byte.toString(16).padStart(2, "0"))
+              .join("");
+            const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\\/+$/, "");
+            const imageUrl = \`\${endpoint}\${record.image_key}?ik-t=\${expiresAt}&ik-s=\${signature}\`;
+            const imageResponse = await fetch(imageUrl);
+            if (!imageResponse.ok) {
+              return json({ success: false, error: "Unable to retrieve public document image" }, 502);
+            }
+            return new Response(imageResponse.body, {
+              status: 200,
+              headers: {
+                ...corsHeaders,
+                "Content-Type": record.image_mime_type,
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Disposition": "inline",
+              },
+            });
+          } catch {
+            return json({ success: false, error: "Public document photo retrieval failed" }, 502);
+          }
+        }
+      }
+
       // ── Routes Admin indépendantes (token admin_sessions requis) ─────────
       // Insérées AVANT authenticatedPrincipal — un token admin n'est jamais
       // un token utilisateur normal (tables séparées).
