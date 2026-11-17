@@ -1171,7 +1171,7 @@ fetch('/api/shares/open', {
             const signature = Array.from(new Uint8Array(signatureBuffer))
               .map((byte) => byte.toString(16).padStart(2, "0"))
               .join("");
-            const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\\/+$/, "");
+            const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\/+$/, "");
             const imageUrl = `${endpoint}${record.image_key}?ik-t=${expiresAt}&ik-s=${signature}`;
             const imageResponse = await fetch(imageUrl);
             if (!imageResponse.ok) {
