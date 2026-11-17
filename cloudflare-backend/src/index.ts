@@ -1164,7 +1164,6 @@ fetch('/api/shares/open', {
       if (path === "/api/admin/classification-requests" && request.method === "GET") {
         const adm = await authenticatedAdmin(request, env);
         if (!adm) return json({ success: false, error: "Admin authentication required" }, 401);
-        const nowIso = new Date().toISOString();
         // Classification requests stay pending until an administrator decides.
         // Do not convert an unreviewed request into a rejection just because time passed.
         const result = await env.smartvault_db
@@ -1884,7 +1883,7 @@ if (path === "/api/classification-requests" && request.method === "POST") {
     return json({ success: false, error: "Classification image upload failed" }, 502);
   }
 
-  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
   if (existing) {
     await env.smartvault_db.prepare(
       `UPDATE classification_requests
