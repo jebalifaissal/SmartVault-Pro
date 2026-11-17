@@ -168,6 +168,18 @@ back_image_mime_type TEXT,
 			details TEXT,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE user_notifications (
+			id TEXT PRIMARY KEY NOT NULL,
+			user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+			type TEXT NOT NULL CHECK(type IN ('document_accepted', 'document_rejected')),
+			title TEXT NOT NULL,
+			body TEXT NOT NULL,
+			request_id TEXT NOT NULL,
+			category TEXT,
+			security_level TEXT,
+			is_read INTEGER NOT NULL DEFAULT 0,
+			created_at INTEGER NOT NULL
+		)`,
 	];
 	for (const statement of schema) {
 		await env.smartvault_db.prepare(statement).run();
@@ -714,7 +726,7 @@ it("creates temporary image shares without exposing another user's cloud documen
 		});
 	});
 
-	it("marks expired pending classification requests when Admin loads the inbox", async () => {
+	it("keeps expired pending classification requests available for Admin review", async () => {
 		const admin = await createAccount("classification-expiry-admin@example.com", true);
 		const adminLogin = await loginAdmin(admin.email, admin.password);
 		const adminToken = (await adminLogin.json() as { token: string }).token;
@@ -743,26 +755,38 @@ it("creates temporary image shares without exposing another user's cloud documen
 			{ headers: { Authorization: authorizationHeader(adminToken) } },
 		);
 		expect(response.status).toBe(200);
-		expect((await response.json() as { requests: unknown[] }).requests).toEqual([]);
+		const inboxBody = await response.json() as {
+			requests: Array<{ id: string; status: string }>;
+		};
+		expect(inboxBody.requests).toContainEqual(
+			expect.objectContaining({ id: requestId, status: "PENDING" }),
+		);
 
 		const expired = await env.smartvault_db
 			.prepare("SELECT status, rejection_reason FROM classification_requests WHERE id = ?")
 			.bind(requestId)
-			.first<{ status: string; rejection_reason: string }>();
+			.first<{ status: string; rejection_reason: string | null }>();
 		expect(expired).toEqual({
-			status: "REJECTED",
-			rejection_reason: "Request expired",
+			status: "PENDING",
+			rejection_reason: null,
 		});
 	});
 
 	it("grants Admin only to the D1-linked account identity", async () => {
 		const admin = await createAccount("admin@example.com", true);
 		const response = await loginAdmin(admin.email, admin.password);
-		const body = await response.json() as { token: string; isAdmin: boolean };
-		expect(body.isAdmin).toBe(true);
+		expect(response.status).toBe(200);
+		const body = await response.json() as {
+			success: boolean;
+			token: string;
+			admin: { email: string; role: string };
+		};
+		expect(body.success).toBe(true);
+		expect(body.token).toBeTruthy();
+		expect(body.admin).toEqual({ email: admin.email, role: "admin" });
 
 		const inbox = await SELF.fetch("https://example.com/api/admin/classification-requests", {
-			headers: { Authorization: `Bearer ${body.token}` },
+			headers: { Authorization: authorizationHeader(body.token) },
 		});
 		expect(inbox.status).toBe(200);
 	});
