@@ -1165,14 +1165,13 @@ fetch('/api/shares/open', {
         const adm = await authenticatedAdmin(request, env);
         if (!adm) return json({ success: false, error: "Admin authentication required" }, 401);
         const nowIso = new Date().toISOString();
-        await env.smartvault_db
-          .prepare("UPDATE classification_requests SET status = 'REJECTED', rejection_reason = 'Request expired' WHERE status = 'PENDING' AND expires_at <= ?")
-          .bind(nowIso).run();
+        // Classification requests stay pending until an administrator decides.
+        // Do not convert an unreviewed request into a rejection just because time passed.
         const result = await env.smartvault_db
           .prepare(`SELECT id, user_email, title, message, document_type, status, created_at, expires_at,
                     CASE WHEN back_image_key IS NOT NULL AND back_image_key != '' THEN 1 ELSE 0 END AS has_back_image
-             FROM classification_requests WHERE status = 'PENDING' AND expires_at > ? ORDER BY created_at ASC`)
-          .bind(new Date().toISOString()).all();
+             FROM classification_requests WHERE status = 'PENDING' ORDER BY created_at ASC`)
+          .all();
         return json({ success: true, requests: result.results });
       }
 
@@ -1841,7 +1840,7 @@ if (path === "/api/classification-requests" && request.method === "POST") {
     if (existing) {
       return json({ success: true, status: existing.status });
     }
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     await env.smartvault_db.prepare(
       `INSERT INTO classification_requests
        (id, user_id, user_email, title, message, document_type,
@@ -2094,10 +2093,7 @@ if (path === "/api/classification-requests" && request.method === "POST") {
     }
   },
   async scheduled(_controller, env): Promise<void> {
-    await env.smartvault_db
-      .prepare("UPDATE classification_requests SET status = 'REJECTED', rejection_reason = 'Request expired' WHERE status = 'PENDING' AND expires_at <= ?")
-      .bind(new Date().toISOString())
-      .run();
+    // Classification requests are not auto-rejected; admin review is the only decision.
     const now = Date.now();
     await env.smartvault_db
       .prepare("DELETE FROM auth_sessions WHERE expires_at <= ? OR revoked_at IS NOT NULL")
