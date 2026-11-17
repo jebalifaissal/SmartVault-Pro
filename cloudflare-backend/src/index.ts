@@ -945,7 +945,7 @@ export default {
             { name: "HMAC", hash: "SHA-1" }, false, ["sign"],
           );
           const signatureBuffer = await crypto.subtle.sign(
-            "HMAC", key, new TextEncoder().encode(`${image.path.replace(/^\\/+/, "")}${expiresAt}`),
+            "HMAC", key, new TextEncoder().encode(`${image.path}${expiresAt}`),
           );
           const signature = Array.from(new Uint8Array(signatureBuffer))
             .map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -1166,7 +1166,7 @@ fetch('/api/shares/open', {
             const signatureBuffer = await crypto.subtle.sign(
               "HMAC",
               key,
-              new TextEncoder().encode(`${record.image_key.replace(/^\\/+/, "")}${expiresAt}`),
+              new TextEncoder().encode(`${record.image_key}${expiresAt}`),
             );
             const signature = Array.from(new Uint8Array(signatureBuffer))
               .map((byte) => byte.toString(16).padStart(2, "0"))
@@ -1351,7 +1351,7 @@ fetch('/api/shares/open', {
         { name: "HMAC", hash: "SHA-1" }, false, ["sign"],
       );
       const signatureBuffer = await crypto.subtle.sign(
-        "HMAC", key, new TextEncoder().encode(`${record.image_key.replace(/^\\/+/, "")}${expiresAt}`),
+        "HMAC", key, new TextEncoder().encode(`${record.image_key}${expiresAt}`),
       );
       const signature = Array.from(new Uint8Array(signatureBuffer))
         .map((byte) => byte.toString(16).padStart(2, "0")).join("");
