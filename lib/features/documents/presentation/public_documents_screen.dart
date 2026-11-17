@@ -65,7 +65,35 @@ class _PublicDocumentsScreenState extends State<PublicDocumentsScreen> {
       Uri.parse(_baseUrl + '/api/public-documents/' + Uri.encodeComponent(id) + '/' + side),
     ).timeout(const Duration(seconds: 25));
     if (response.statusCode != 200) {
-      throw StateError('Photo indisponible (' + response.statusCode.toString() + ').');
+      var serverMessage = response.body;
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic> && decoded['error'] is String) {
+          serverMessage = decoded['error'] as String;
+        }
+      } on FormatException {
+        // Keep the raw response for diagnostics when it is not JSON.
+      }
+      debugPrint(
+        'PUBLIC DOCUMENT PHOTO ERROR: status=${response.statusCode}, '
+        'side=${back ? 'back' : 'front'}, id=$id, response=$serverMessage',
+      );
+      throw StateError(
+        'Photo indisponible (HTTP ${response.statusCode}) : $serverMessage',
+      );
+    }
+    final contentType = response.headers['content-type'] ?? '';
+    if (!contentType.startsWith('image/')) {
+      debugPrint(
+        'PUBLIC DOCUMENT PHOTO INVALID CONTENT: '
+        'status=${response.statusCode}, content-type=$contentType, id=$id',
+      );
+      throw const FormatException(
+        'Le serveur n’a pas renvoyé un fichier image valide.',
+      );
+    }
+    if (response.bodyBytes.isEmpty) {
+      throw const FormatException('Le serveur a renvoyé une photo vide.');
     }
     return response.bodyBytes;
   }
