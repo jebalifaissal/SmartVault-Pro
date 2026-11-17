@@ -403,7 +403,13 @@ class _PhotoPanel extends StatelessWidget {
         future: photo,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return const Padding(padding: EdgeInsets.all(24), child: Text('Impossible de charger cette photo.'));
+            return Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'Impossible de charger cette photo.\\n${snapshot.error}',
+                textAlign: TextAlign.center,
+              ),
+            );
           }
           if (!snapshot.hasData) {
             return const SizedBox(height: 180, child: Center(child: CircularProgressIndicator()));
