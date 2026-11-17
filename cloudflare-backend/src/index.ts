@@ -1175,11 +1175,15 @@ fetch('/api/shares/open', {
             const imageUrl = `${endpoint}${record.image_key}?ik-t=${expiresAt}&ik-s=${signature}`;
             const imageResponse = await fetch(imageUrl);
             if (!imageResponse.ok) {
+              const upstreamBody = (await imageResponse.text()).slice(0, 500);
               console.error("PUBLIC DOCUMENT IMAGEKIT UPSTREAM ERROR", {
                 documentId: requestId,
                 side: isBackPhoto ? "back" : "front",
                 status: imageResponse.status,
                 contentType: imageResponse.headers.get("content-type"),
+                response: upstreamBody,
+                imagePath: record.image_key,
+                endpointHost: new URL(endpoint).host,
               });
               return json({
                 success: false,
