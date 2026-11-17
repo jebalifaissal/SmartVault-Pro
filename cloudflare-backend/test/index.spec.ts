@@ -180,6 +180,14 @@ back_image_mime_type TEXT,
 			is_read INTEGER NOT NULL DEFAULT 0,
 			created_at INTEGER NOT NULL
 		)`,
+		`CREATE TABLE push_notification_tokens (
+			id TEXT PRIMARY KEY NOT NULL,
+			user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+			token TEXT NOT NULL UNIQUE,
+			platform TEXT NOT NULL CHECK(platform IN ('android', 'ios')),
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		)`,
 	];
 	for (const statement of schema) {
 		await env.smartvault_db.prepare(statement).run();
