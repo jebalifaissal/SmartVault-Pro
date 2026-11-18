@@ -4,7 +4,7 @@ import {
 	waitOnExecutionContext,
 	SELF,
 } from "cloudflare:test";
-import { beforeAll, describe, it, expect } from "vitest";
+import { beforeAll, describe, it, expect, vi } from "vitest";
 import worker, { hashPassword } from "../src/index";
 
 const IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
@@ -28,8 +28,8 @@ async function createAccount(email: string, isAdmin = false) {
 		.run();
 	if (isAdmin) {
 		await env.smartvault_db
-			.prepare("INSERT INTO admin_users (email, active, user_id) VALUES (?, 1, ?)")
-			.bind(email, id)
+			.prepare("INSERT INTO admin_users (email, active, user_id, password_salt, password_hash) VALUES (?, 1, ?, ?, ?)")
+			.bind(email, id, salt, await hashPassword(password, salt))
 			.run();
 	}
 	return { id, email, password };
@@ -37,6 +37,14 @@ async function createAccount(email: string, isAdmin = false) {
 
 async function login(email: string, password: string) {
 	return SELF.fetch("https://example.com/api/auth/login", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ email, password }),
+	});
+}
+
+async function loginAdmin(email: string, password: string) {
+	return SELF.fetch("https://example.com/api/admin/login", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ email, password }),
@@ -72,7 +80,21 @@ beforeAll(async () => {
 		`CREATE TABLE admin_users (
 			email TEXT PRIMARY KEY NOT NULL,
 			active INTEGER NOT NULL DEFAULT 1,
-			user_id TEXT
+			user_id TEXT,
+			password_salt TEXT,
+			password_hash TEXT
+		)`,
+		`CREATE TABLE admin_sessions (
+			token_hash TEXT PRIMARY KEY NOT NULL,
+			admin_email TEXT NOT NULL,
+			expires_at INTEGER NOT NULL,
+			created_at INTEGER NOT NULL,
+			revoked_at INTEGER
+		)`,
+		`CREATE TABLE admin_login_attempts (
+			key_hash TEXT PRIMARY KEY NOT NULL,
+			attempts INTEGER NOT NULL,
+			window_start INTEGER NOT NULL
 		)`,
 		`CREATE TABLE classification_requests (
 			id TEXT PRIMARY KEY NOT NULL,
@@ -83,12 +105,20 @@ beforeAll(async () => {
 			document_type TEXT NOT NULL,
 			image_key TEXT NOT NULL,
 			image_mime_type TEXT NOT NULL,
+			back_image_key TEXT,
+back_image_mime_type TEXT,
 			status TEXT NOT NULL DEFAULT 'PENDING',
 			security_level TEXT,
 			category TEXT,
 			rejection_reason TEXT,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			expires_at TEXT NOT NULL,
+			first_name TEXT,
+			last_name TEXT,
+			document_number TEXT,
+			date_of_birth TEXT,
+			place_of_birth TEXT,
+			expiration_date TEXT,
 			decided_at TEXT,
 			decided_by TEXT
 		)`,
@@ -98,6 +128,7 @@ beforeAll(async () => {
 			document_id TEXT NOT NULL,
 			token_hash TEXT NOT NULL UNIQUE,
 			fields_json TEXT NOT NULL,
+			images_json TEXT,
 			expires_at INTEGER NOT NULL,
 			created_at INTEGER NOT NULL,
 			revoked_at INTEGER
@@ -137,6 +168,26 @@ beforeAll(async () => {
 			details TEXT,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE user_notifications (
+			id TEXT PRIMARY KEY NOT NULL,
+			user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+			type TEXT NOT NULL CHECK(type IN ('document_accepted', 'document_rejected')),
+			title TEXT NOT NULL,
+			body TEXT NOT NULL,
+			request_id TEXT NOT NULL,
+			category TEXT,
+			security_level TEXT,
+			is_read INTEGER NOT NULL DEFAULT 0,
+			created_at INTEGER NOT NULL
+		)`,
+		`CREATE TABLE push_notification_tokens (
+			id TEXT PRIMARY KEY NOT NULL,
+			user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+			token TEXT NOT NULL UNIQUE,
+			platform TEXT NOT NULL CHECK(platform IN ('android', 'ios')),
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		)`,
 	];
 	for (const statement of schema) {
 		await env.smartvault_db.prepare(statement).run();
@@ -144,6 +195,36 @@ beforeAll(async () => {
 });
 
 describe("SmartVault Worker", () => {
+	it("exposes only Admin-approved MEDIUM classification requests to guests", async () => {
+		const now = new Date().toISOString();
+		const rows = [
+			["public-medium", "ADMIN_REVIEWED", "MEDIUM", "Cours", "/public-medium.jpg"],
+			["private-high", "ADMIN_REVIEWED", "HIGH", "Pièce d’identité", "/private-high.jpg"],
+			["still-pending", "PENDING", null, null, "/pending.jpg"],
+			["rejected-medium", "REJECTED", null, null, "/rejected.jpg"],
+			["no-photo-medium", "ADMIN_REVIEWED", "MEDIUM", "Notes", ""],
+		];
+		for (const [id, status, level, category, imageKey] of rows) {
+			await env.smartvault_db.prepare(
+				`INSERT INTO classification_requests
+					 (id, user_id, user_email, title, document_type, image_key,
+					  image_mime_type, status, security_level, category, expires_at)
+					 VALUES (?, ?, ?, ?, ?, ?, 'image/jpeg', ?, ?, ?, ?)`,
+			).bind(id, "owner-" + id, "owner@example.com", id, "PHOTO",
+				imageKey, status, level, category, now).run();
+		}
+
+		const response = await SELF.fetch("https://example.com/api/public-documents");
+		expect(response.status).toBe(200);
+		const body = await response.json() as {
+			documents: Array<{ id: string; category: string }>;
+		};
+		expect(body.documents).toEqual([
+			expect.objectContaining({ id: "public-medium", category: "Cours" }),
+		]);
+	});
+
+
 	it("reports that the API is running", async () => {
 		const request = new IncomingRequest("http://example.com/");
 		const ctx = createExecutionContext();
@@ -401,7 +482,7 @@ describe("SmartVault Worker", () => {
 		expect((await SELF.fetch("https://example.com/api/session", { headers })).status).toBe(401);
 	});
 
-	it("creates and revokes shares only for documents owned by the caller", async () => {
+it("creates temporary image shares without exposing another user's cloud document", async () => {
 		const owner = await createAccount("share-owner@example.com");
 		const otherUser = await createAccount("share-other@example.com");
 		await env.smartvault_db
@@ -415,10 +496,38 @@ describe("SmartVault Worker", () => {
 		const ownerToken = (await ownerLogin.json() as { token: string }).token;
 		const otherLogin = await login(otherUser.email, otherUser.password);
 		const otherToken = (await otherLogin.json() as { token: string }).token;
+		const originalFetch = globalThis.fetch;
+		let imageUploadCount = 0;
+		vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+			const requestUrl = String(input);
+			if (requestUrl === "https://upload.imagekit.io/api/v1/files/upload") {
+				imageUploadCount += 1;
+				const side = imageUploadCount === 1 ? "front" : "back";
+				return new Response(JSON.stringify({
+					filePath: `/smartvault-shares/share-${side}-test.jpg`,
+					fileId: `imagekit-share-${side}-test`,
+				}), { status: 200, headers: { "Content-Type": "application/json" } });
+			}
+			if (requestUrl.startsWith("https://api.imagekit.io/v1/files/") && init?.method === "DELETE") {
+				return new Response(null, { status: 204 });
+			}
+			if (requestUrl.startsWith("https://images.example.test/")) {
+				return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+			}
+			return originalFetch(input, init);
+		}));
+		Object.assign(env, {
+			IMAGEKIT_PRIVATE_KEY: "test-imagekit-private-key",
+			IMAGEKIT_URL_ENDPOINT: "https://images.example.test",
+		});
 		const shareRequest = {
 			document_id: "owner-document",
 			duration_minutes: 15,
 			fields: { category: "Passeport" },
+			front_image_base64: "AQID",
+			front_image_mime_type: "image/jpeg",
+			back_image_base64: "BAUG",
+			back_image_mime_type: "image/jpeg",
 		};
 		const foreignShare = await SELF.fetch("https://example.com/api/shares", {
 			method: "POST",
@@ -461,10 +570,126 @@ describe("SmartVault Worker", () => {
 		expect(await openResponse.json()).toMatchObject({
 			success: true,
 			fields: { category: "Passeport" },
+			images: ["front", "back"],
 		});
+		expect(imageUploadCount).toBe(2);
+
+		const imageResponse = await SELF.fetch("https://example.com/api/shares/image/front", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ token: shareBody.share.url.split("#")[1] }),
+		});
+		expect(imageResponse.status).toBe(200);
+		expect(Array.from(new Uint8Array(await imageResponse.arrayBuffer()))).toEqual([1, 2, 3]);
+
+		const backImageResponse = await SELF.fetch("https://example.com/api/shares/image/back", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ token: shareBody.share.url.split("#")[1] }),
+		});
+		expect(backImageResponse.status).toBe(200);
+		expect(Array.from(new Uint8Array(await backImageResponse.arrayBuffer()))).toEqual([1, 2, 3]);
+
+		const ownerRevoke = await SELF.fetch(
+			`https://example.com/api/shares/${shareBody.share.id}`,
+			{ method: "DELETE", headers: { Authorization: authorizationHeader(ownerToken) } },
+		);
+		expect(ownerRevoke.status).toBe(200);
+		const revokedImage = await SELF.fetch("https://example.com/api/shares/image/front", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ token: shareBody.share.url.split("#")[1] }),
+		});
+		expect(revokedImage.status).toBe(404);
+		const revokedBackImage = await SELF.fetch("https://example.com/api/shares/image/back", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ token: shareBody.share.url.split("#")[1] }),
+		});
+		expect(revokedBackImage.status).toBe(404);
+		vi.unstubAllGlobals();
+	});
+
+	it("uploads and exposes both Recto and Verso photos for a classification request", async () => {
+		const user = await createAccount("classification-two-sides@example.com");
+		const admin = await createAccount("classification-two-sides-admin@example.com", true);
+		const userLogin = await login(user.email, user.password);
+		const userToken = (await userLogin.json() as { token: string }).token;
+		const adminLogin = await loginAdmin(admin.email, admin.password);
+		const adminToken = (await adminLogin.json() as { token: string }).token;
+		const requestId = crypto.randomUUID();
+		const originalFetch = globalThis.fetch;
+		let uploadCount = 0;
+		vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input);
+			if (url === "https://upload.imagekit.io/api/v1/files/upload") {
+				uploadCount += 1;
+				const side = uploadCount === 1 ? "front" : "back";
+				return new Response(JSON.stringify({
+					filePath: `/classification-${side}-${requestId}.jpg`,
+					fileId: `imagekit-${side}-${requestId}`,
+				}), { status: 200, headers: { "Content-Type": "application/json" } });
+			}
+			if (url.startsWith("https://images.example.test/")) {
+				return new Response(new Uint8Array([7, 8, 9]), { status: 200 });
+			}
+			return originalFetch(input, init);
+		}));
+		Object.assign(env, {
+			IMAGEKIT_PRIVATE_KEY: "test-private-key",
+			IMAGEKIT_URL_ENDPOINT: "https://images.example.test",
+		});
+
+		try {
+			const created = await SELF.fetch("https://example.com/api/classification-requests", {
+				method: "POST",
+				headers: {
+					Authorization: authorizationHeader(userToken),
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					id: requestId,
+					title: "Carte nationale d’identité",
+					document_type: "CIN_TUNISIE",
+					image_base64: "AQID",
+					image_mime_type: "image/jpeg",
+					back_image_base64: "BAUG",
+					back_image_mime_type: "image/jpeg",
+				}),
+			});
+			expect(created.status).toBe(201);
+			expect(uploadCount).toBe(2);
+
+			const stored = await env.smartvault_db.prepare(
+				"SELECT image_key, back_image_key, back_image_mime_type FROM classification_requests WHERE id = ?",
+			).bind(requestId).first<{ image_key: string; back_image_key: string; back_image_mime_type: string }>();
+			expect(stored?.image_key).toContain("classification-front");
+			expect(stored?.back_image_key).toContain("classification-back");
+			expect(stored?.back_image_mime_type).toBe("image/jpeg");
+
+			const inbox = await SELF.fetch("https://example.com/api/admin/classification-requests", {
+				headers: { Authorization: authorizationHeader(adminToken) },
+			});
+			expect(inbox.status).toBe(200);
+			const inboxBody = await inbox.json() as { requests: Array<{ id: string; has_back_image: number }> };
+			expect(inboxBody.requests.find((item) => item.id === requestId)?.has_back_image).toBe(1);
+
+			const backPhoto = await SELF.fetch(
+				`https://example.com/api/admin/classification-requests/${requestId}/back-photo`,
+				{ headers: { Authorization: authorizationHeader(adminToken) } },
+			);
+			expect(backPhoto.status).toBe(200);
+			expect(Array.from(new Uint8Array(await backPhoto.arrayBuffer()))).toEqual([7, 8, 9]);
+		} finally {
+			vi.unstubAllGlobals();
+			delete (env as Record<string, unknown>).IMAGEKIT_PRIVATE_KEY;
+			delete (env as Record<string, unknown>).IMAGEKIT_URL_ENDPOINT;
+		}
 	});
 
 	it("keeps classification requests in D1 without photos and logs Admin decisions", async () => {
+		delete (env as Record<string, unknown>).IMAGEKIT_PRIVATE_KEY;
+		delete (env as Record<string, unknown>).IMAGEKIT_URL_ENDPOINT;
 		const user = await createAccount("classification-user@example.com");
 		const userLogin = await login(user.email, user.password);
 		const userToken = (await userLogin.json() as { token: string }).token;
@@ -481,8 +706,8 @@ describe("SmartVault Worker", () => {
 					id: requestId,
 					title: "Passport",
 					document_type: "PASSPORT",
+					image_base64: "AQID",
 					image_mime_type: "image/jpeg",
-					image_base64: "ignored-image-data",
 				}),
 			},
 		);
@@ -497,7 +722,7 @@ describe("SmartVault Worker", () => {
 		expect(storedRequest).toEqual({ image_key: "", image_mime_type: "" });
 
 		const admin = await createAccount("classification-admin@example.com", true);
-		const adminLogin = await login(admin.email, admin.password);
+		const adminLogin = await loginAdmin(admin.email, admin.password);
 		const adminToken = (await adminLogin.json() as { token: string }).token;
 		const photoResponse = await SELF.fetch(
 			`https://example.com/api/admin/classification-requests/${requestId}/photo`,
@@ -539,9 +764,9 @@ describe("SmartVault Worker", () => {
 		});
 	});
 
-	it("marks expired pending classification requests when Admin loads the inbox", async () => {
+	it("keeps expired pending classification requests available for Admin review", async () => {
 		const admin = await createAccount("classification-expiry-admin@example.com", true);
-		const adminLogin = await login(admin.email, admin.password);
+		const adminLogin = await loginAdmin(admin.email, admin.password);
 		const adminToken = (await adminLogin.json() as { token: string }).token;
 		const requestId = crypto.randomUUID();
 		await env.smartvault_db
@@ -568,26 +793,38 @@ describe("SmartVault Worker", () => {
 			{ headers: { Authorization: authorizationHeader(adminToken) } },
 		);
 		expect(response.status).toBe(200);
-		expect((await response.json() as { requests: unknown[] }).requests).toEqual([]);
+		const inboxBody = await response.json() as {
+			requests: Array<{ id: string; status: string }>;
+		};
+		expect(inboxBody.requests).toContainEqual(
+			expect.objectContaining({ id: requestId, status: "PENDING" }),
+		);
 
 		const expired = await env.smartvault_db
 			.prepare("SELECT status, rejection_reason FROM classification_requests WHERE id = ?")
 			.bind(requestId)
-			.first<{ status: string; rejection_reason: string }>();
+			.first<{ status: string; rejection_reason: string | null }>();
 		expect(expired).toEqual({
-			status: "REJECTED",
-			rejection_reason: "Request expired",
+			status: "PENDING",
+			rejection_reason: null,
 		});
 	});
 
 	it("grants Admin only to the D1-linked account identity", async () => {
 		const admin = await createAccount("admin@example.com", true);
-		const response = await login(admin.email, admin.password);
-		const body = await response.json() as { token: string; isAdmin: boolean };
-		expect(body.isAdmin).toBe(true);
+		const response = await loginAdmin(admin.email, admin.password);
+		expect(response.status).toBe(200);
+		const body = await response.json() as {
+			success: boolean;
+			token: string;
+			admin: { email: string; role: string };
+		};
+		expect(body.success).toBe(true);
+		expect(body.token).toBeTruthy();
+		expect(body.admin).toEqual({ email: admin.email, role: "admin" });
 
 		const inbox = await SELF.fetch("https://example.com/api/admin/classification-requests", {
-			headers: { Authorization: `Bearer ${body.token}` },
+			headers: { Authorization: authorizationHeader(body.token) },
 		});
 		expect(inbox.status).toBe(200);
 	});

@@ -151,17 +151,6 @@ NationalIdOcrResult parseTunisianNationalIdText(String text) {
       _extractPlaceFromKnownCities(text) ??
       _extractPlaceFromBirthDateLine(lines);
 
-  // Déduction heuristique pour le Nom et le Prénom si les labels sont absents de la carte
-  if (firstName == null || lastName == null) {
-    final nameCandidates = _heuristicExtractNames(lines);
-    if (lastName == null && nameCandidates.isNotEmpty) {
-      lastName = nameCandidates.first;
-    }
-    if (firstName == null && nameCandidates.length > 1) {
-      firstName = nameCandidates[1];
-    }
-  }
-
   return NationalIdOcrResult(
     firstName: firstName,
     lastName: lastName,
@@ -235,11 +224,6 @@ String? _extractBirthDate(List<String> lines) {
     }
   }
 
-  // Si aucun label spécifique n'a matché, on prend la 1ère date plausible (passée)
-  for (final line in lines) {
-    final parsed = _parseBirthDate(line);
-    if (parsed != null) return parsed;
-  }
   return null;
 }
 
@@ -332,19 +316,6 @@ String? _extractDocumentNumber(List<String> lines, String fullText) {
     }
   }
 
-  // 2. Recherche directe de 8 chiffres dans chaque ligne
-  for (final line in lines) {
-    final num = _parseDocumentNumber(line);
-    if (num != null) return num;
-  }
-
-  // 3. Recherche globale avec normalisation tolérante (ex: 08 123 456 ou O8123456)
-  final normalized = _normalizeOcrDigits(fullText);
-  final match = RegExp(r'(?<!\d)(\d{8})(?!\d)').firstMatch(normalized);
-  if (match != null) {
-    return match.group(1);
-  }
-
   return null;
 }
 
@@ -367,30 +338,6 @@ String? _extractPassportNumber(List<String> lines) {
     }
   }
   return null;
-}
-
-/// Extraction heuristique des noms quand les libellés "Nom:" / "Prénom:" sont absents
-List<String> _heuristicExtractNames(List<String> lines) {
-  const ignoreKeywords = [
-    'republique', 'tunisienne', 'carte', 'nationale', 'identite',
-    'الجمهورية', 'التونسية', 'بطاقة', 'التعريف', 'الوطنية',
-    'date', 'naissance', 'lieu', 'sexe', 'valable', 'police'
-  ];
-
-  final candidates = <String>[];
-  for (final line in lines) {
-    final lower = line.toLowerCase();
-    // Ignore les lignes contenant des chiffres ou des mots-clés de titre officiel
-    if (RegExp(r'\d').hasMatch(line)) continue;
-    if (ignoreKeywords.any((kw) => lower.contains(kw))) continue;
-
-    final cleaned = _cleanValue(line);
-    if (cleaned != null && cleaned.length >= 3 && cleaned.length <= 40) {
-      candidates.add(cleaned);
-      if (candidates.length >= 2) break;
-    }
-  }
-  return candidates;
 }
 
 String? _parseBirthDate(String text) {
@@ -425,9 +372,8 @@ DateTime? _parseDate(String text) {
 }
 
 String _formatDate(DateTime date) =>
-    '${date.day.toString().padLeft(2, '0')}/'
-    '${date.month.toString().padLeft(2, '0')}/'
-    '${date.year}';
+    '${date.year}-${date.month.toString().padLeft(2, '0')}-'
+    '${date.day.toString().padLeft(2, '0')}';
 
 String? _parseDocumentNumber(String text) {
   final normalized = _normalizeOcrDigits(text);

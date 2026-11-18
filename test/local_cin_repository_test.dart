@@ -97,18 +97,23 @@ void main() {
     );
   });
 
-  test('deletes the local database row and its image', () async {
+  test('deletes the local database row and both document faces', () async {
+    final backImage = Uint8List.fromList([4, 5, 6]);
     final saved = await repository.saveDocument(
       userId: 'user-a',
       document: _document('cin-delete'),
       imageBytes: Uint8List.fromList([8, 9]),
       imageMimeType: 'image/jpeg',
+      backImageBytes: backImage,
+      backImageMimeType: 'image/jpeg',
     );
 
     await repository.deleteDocument(userId: 'user-a', documentId: saved.id);
 
     expect(await repository.watchDocuments('user-a').first, isEmpty);
     expect(await File(saved.localImagePath!).exists(), isFalse);
+    expect(saved.localBackImagePath, isNotNull);
+    expect(await File(saved.localBackImagePath!).exists(), isFalse);
   });
 
   test('updates a local document without losing its image path', () async {
@@ -146,6 +151,7 @@ void main() {
     'keeps a pending classification out of the vault until approval',
     () async {
       final image = Uint8List.fromList([7, 8, 9]);
+      final backImage = Uint8List.fromList([4, 5, 6]);
       await repository.stageClassificationRequest(
         userId: 'user-a',
         id: 'pending-cin',
@@ -154,12 +160,16 @@ void main() {
         documentType: 'CIN',
         imageBytes: image,
         imageMimeType: 'image/jpeg',
+        backImageBytes: backImage,
+        backImageMimeType: 'image/jpeg',
       );
 
       expect(await repository.watchDocuments('user-a').first, isEmpty);
       var pending = await repository.pendingClassificationRequests('user-a');
       expect(pending, hasLength(1));
       expect(await File(pending.single.imagePath).readAsBytes(), image);
+      expect(pending.single.backImagePath, isNotNull);
+      expect(await File(pending.single.backImagePath!).readAsBytes(), backImage);
       expect(pending.single.isSubmitted, isFalse);
 
       await repository.markClassificationRequestSubmitted(
@@ -180,17 +190,32 @@ void main() {
         id: 'pending-cin',
         category: 'Pièce d’identité',
         securityLevel: DocumentSecurityLevel.high,
+        firstName: 'Faissal',
+        lastName: 'Jebali',
+        documentNumber: '12345678',
+        dateOfBirth: '2000-01-02',
+        placeOfBirth: 'Gabès',
+        expirationDate: DateTime(2030, 5, 10),
       );
       final documents = await repository.watchDocuments('user-a').first;
 
       expect(documents, hasLength(1));
       expect(approved.id, 'pending-cin');
       expect(approved.securityLevel, DocumentSecurityLevel.high);
+      expect(approved.holderName, 'Faissal Jebali');
+      expect(approved.firstName, 'Faissal');
+      expect(approved.lastName, 'Jebali');
+      expect(approved.cinNumber, '12345678');
+      expect(approved.dateOfBirth, '2000-01-02');
+      expect(approved.placeOfBirth, 'Gabès');
+      expect(approved.expiryDate, DateTime(2030, 5, 10));
       expect(
         approved.classificationStatus,
         DocumentClassificationStatus.adminReviewed,
       );
       expect(await File(approved.localImagePath!).readAsBytes(), image);
+      expect(approved.localBackImagePath, isNotNull);
+      expect(await File(approved.localBackImagePath!).readAsBytes(), backImage);
       expect(await repository.pendingClassificationRequests('user-a'), isEmpty);
     },
   );
@@ -198,6 +223,7 @@ void main() {
   test(
     'removes a rejected pending photo without adding a vault document',
     () async {
+      final rejectedBack = Uint8List.fromList([9, 8]);
       await repository.stageClassificationRequest(
         userId: 'user-a',
         id: 'rejected-cin',
@@ -206,6 +232,8 @@ void main() {
         documentType: 'CIN',
         imageBytes: Uint8List.fromList([1, 2]),
         imageMimeType: 'image/jpeg',
+        backImageBytes: rejectedBack,
+        backImageMimeType: 'image/jpeg',
       );
       final pending = await repository.pendingClassificationRequests('user-a');
 
@@ -215,6 +243,7 @@ void main() {
       );
 
       expect(await File(pending.single.imagePath).exists(), isFalse);
+      expect(await File(pending.single.backImagePath!).exists(), isFalse);
       expect(await repository.pendingClassificationRequests('user-a'), isEmpty);
       expect(await repository.watchDocuments('user-a').first, isEmpty);
     },

@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -31,7 +32,9 @@ class _CinCaptureScreenState extends State<CinCaptureScreen> {
   final _noteController = TextEditingController();
 
   Uint8List? _frontBytes;
+  String? _frontMimeType;
   Uint8List? _backBytes;
+  String? _backMimeType;
 
   bool _isSaving = false;
 
@@ -65,8 +68,14 @@ class _CinCaptureScreenState extends State<CinCaptureScreen> {
       setState(() {
         if (isFront) {
           _frontBytes = bytes;
+          _frontMimeType = file.path.toLowerCase().endsWith('.png')
+              ? 'image/png'
+              : 'image/jpeg';
         } else {
           _backBytes = bytes;
+          _backMimeType = file.path.toLowerCase().endsWith('.png')
+              ? 'image/png'
+              : 'image/jpeg';
         }
       });
     } on PlatformException catch (error) {
@@ -173,7 +182,9 @@ class _CinCaptureScreenState extends State<CinCaptureScreen> {
       final note = _noteController.text.trim();
 
       final mainBytes = _frontBytes ?? _backBytes!;
-      const mimeType = 'image/jpeg';
+      final mimeType = _frontBytes != null
+          ? (_frontMimeType ?? 'image/jpeg')
+          : (_backMimeType ?? 'image/jpeg');
 
       final document = VaultDocument(
         id: documentId,
@@ -193,6 +204,8 @@ class _CinCaptureScreenState extends State<CinCaptureScreen> {
         mainBytes,
         mimeType,
         note,
+        _backBytes,
+        _backMimeType,
       );
 
       if (!mounted) return;

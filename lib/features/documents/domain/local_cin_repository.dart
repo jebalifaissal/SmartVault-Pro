@@ -22,6 +22,7 @@ typedef SaveLocalDocument =
       VaultDocument document,
       Uint8List? imageBytes,
       String? imageMimeType,
+      [Uint8List? backImageBytes, String? backImageMimeType]
     );
 
 typedef UpdateLocalDocument =
@@ -33,6 +34,7 @@ typedef SubmitClassificationRequest =
       Uint8List imageBytes,
       String imageMimeType,
       String message,
+      [Uint8List? backImageBytes, String? backImageMimeType]
     );
 
 class PendingLocalClassification {
@@ -44,6 +46,8 @@ class PendingLocalClassification {
     required this.imagePath,
     required this.imageMimeType,
     required this.isSubmitted,
+    this.backImagePath,
+    this.backImageMimeType,
   });
 
   final String id;
@@ -53,6 +57,8 @@ class PendingLocalClassification {
   final String imagePath;
   final String imageMimeType;
   final bool isSubmitted;
+  final String? backImagePath;
+  final String? backImageMimeType;
 }
 
 abstract interface class LocalDocumentRepository {
@@ -63,6 +69,8 @@ abstract interface class LocalDocumentRepository {
     required VaultDocument document,
     Uint8List? imageBytes,
     String? imageMimeType,
+    Uint8List? backImageBytes,
+    String? backImageMimeType,
   });
 
   Future<VaultDocument> updateDocument({
@@ -78,6 +86,8 @@ abstract interface class LocalDocumentRepository {
     required String documentType,
     required Uint8List imageBytes,
     required String imageMimeType,
+    Uint8List? backImageBytes,
+    String? backImageMimeType,
   });
 
   Future<List<PendingLocalClassification>> pendingClassificationRequests(
@@ -94,6 +104,12 @@ abstract interface class LocalDocumentRepository {
     required String id,
     required String category,
     required DocumentSecurityLevel securityLevel,
+    String? firstName,
+    String? lastName,
+    String? documentNumber,
+    String? dateOfBirth,
+    String? placeOfBirth,
+    DateTime? expirationDate,
   });
 
   Future<void> removeClassificationRequest({

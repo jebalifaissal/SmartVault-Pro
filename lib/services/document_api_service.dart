@@ -111,7 +111,12 @@ Future<void> submitClassificationRequest({
   required String documentType,
   required Uint8List imageBytes,
   required String imageMimeType,
+  Uint8List? backImageBytes,
+  String? backImageMimeType,
 }) async {
+  if ((backImageBytes == null) != (backImageMimeType == null)) {
+    throw ArgumentError('Les données et le type MIME du Verso doivent être fournis ensemble.');
+  }
   final response = await _client.post(
     Uri.parse('$_baseUrl/api/classification-requests'),
     headers: await _authenticatedHeaders(),
@@ -122,6 +127,10 @@ Future<void> submitClassificationRequest({
       'document_type': documentType,
       'image_base64': base64Encode(imageBytes),
       'image_mime_type': imageMimeType,
+      if (backImageBytes != null && backImageMimeType != null) ...{
+        'back_image_base64': base64Encode(backImageBytes),
+        'back_image_mime_type': backImageMimeType,
+      },
     }),
   );
 
@@ -153,16 +162,24 @@ Future<void> submitClassificationRequest({
   }
 
   Future<Uint8List> getClassificationRequestPhoto(String id) async {
+    return _getClassificationRequestImage(id, 'photo');
+  }
+
+  Future<Uint8List> getClassificationRequestBackPhoto(String id) async {
+    return _getClassificationRequestImage(id, 'back-photo');
+  }
+
+  Future<Uint8List> _getClassificationRequestImage(String id, String side) async {
     final response = await _client.get(
       Uri.parse(
         '$_baseUrl/api/admin/classification-requests/'
-        '${Uri.encodeComponent(id)}/photo',
+        '${Uri.encodeComponent(id)}/$side',
       ),
       headers: await _authenticatedHeaders(),
     );
     if (response.statusCode != 200) {
       _decodeResponse(response, expectedStatusCode: 200);
-      throw StateError('La photo de la demande est indisponible.');
+      throw StateError('La photo $side de la demande est indisponible.');
     }
     return response.bodyBytes;
   }
@@ -173,12 +190,36 @@ Future<void> submitClassificationRequest({
     String? securityLevel,
     String? category,
     String? rejectionReason,
+    String? firstName,
+    String? lastName,
+    String? documentNumber,
+    String? dateOfBirth,
+    String? placeOfBirth,
+    String? expirationDate,
   }) async {
     final requestBody = <String, String>{'decision': decision};
     if (securityLevel != null) requestBody['security_level'] = securityLevel;
     if (category != null) requestBody['category'] = category;
     if (rejectionReason != null) {
       requestBody['rejection_reason'] = rejectionReason;
+    }
+    if (firstName?.trim().isNotEmpty == true) {
+      requestBody['first_name'] = firstName!.trim();
+    }
+    if (lastName?.trim().isNotEmpty == true) {
+      requestBody['last_name'] = lastName!.trim();
+    }
+    if (documentNumber?.trim().isNotEmpty == true) {
+      requestBody['document_number'] = documentNumber!.trim();
+    }
+    if (dateOfBirth?.trim().isNotEmpty == true) {
+      requestBody['date_of_birth'] = dateOfBirth!.trim();
+    }
+    if (placeOfBirth?.trim().isNotEmpty == true) {
+      requestBody['place_of_birth'] = placeOfBirth!.trim();
+    }
+    if (expirationDate?.trim().isNotEmpty == true) {
+      requestBody['expiration_date'] = expirationDate!.trim();
     }
 
     final response = _decodeResponse(
@@ -226,6 +267,10 @@ Future<void> submitClassificationRequest({
     required String documentId,
     required Map<String, String> fields,
     required int durationMinutes,
+    required Uint8List frontImageBytes,
+    required String frontImageMimeType,
+    Uint8List? backImageBytes,
+    String? backImageMimeType,
   }) async {
     final response = _decodeResponse(
       await _client.post(
@@ -235,6 +280,12 @@ Future<void> submitClassificationRequest({
           'document_id': documentId,
           'fields': fields,
           'duration_minutes': durationMinutes,
+          'front_image_base64': base64Encode(frontImageBytes),
+          'front_image_mime_type': frontImageMimeType,
+          if (backImageBytes != null && backImageMimeType != null) ...{
+            'back_image_base64': base64Encode(backImageBytes),
+            'back_image_mime_type': backImageMimeType,
+          },
         }),
       ),
       expectedStatusCode: 201,

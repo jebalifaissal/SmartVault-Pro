@@ -8,8 +8,12 @@ class DocumentCategorySelectionScreen extends StatelessWidget {
   const DocumentCategorySelectionScreen({
     required this.onSelectSensitive,
     required this.onSelectModerate,
+    required this.onBack,
     super.key,
   });
+
+  /// Retour vers l'écran d'accueil avec la vidéo
+  final VoidCallback onBack;
 
   /// Appele quand l'utilisateur choisit "Tres sensible"
   final VoidCallback onSelectSensitive;
@@ -27,6 +31,28 @@ class DocumentCategorySelectionScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Bouton de retour vers la page Welcome
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: onBack,
+                  icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                  label: const Text('Retour à l’accueil'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF18B6A5),
+                    side: const BorderSide(color: Color(0xFF18B6A5)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+
               // ── En-tête ─────────────────────────────────────────────
               Row(
                 children: [

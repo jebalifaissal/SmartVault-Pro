@@ -443,14 +443,27 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
                   ),
                   const SizedBox(height: 25),
                   _AddMethodCard(
-                    icon: Icons.camera_enhance_rounded,
-                    title: 'Photographier un papier pour l\'Admin',
+                    icon: Icons.photo_camera_outlined,
+                    title: 'Photographier un document',
                     subtitle:
-                        'Prenez la photo (Recto/Verso), l\'admin l\'analyse et la classe dans le bon container',
+                        'La photo est envoyée à l’administrateur pour validation et classement.',
                     badge: 'POUR ADMIN',
                     color: const Color(0xFFE3F2F0),
                     iconColor: const Color(0xFF087E78),
                     onTap: _captureCin,
+                  ),
+                  const SizedBox(height: 13),
+                  _AddMethodCard(
+                    icon: Icons.image_outlined,
+                    title: 'Importer une photo',
+                    subtitle:
+                        'JPEG ou PNG · 6 Mo · reconnaissance locale du document',
+                    badge: _isClassifying ? 'ANALYSE' : 'IMAGE',
+                    color: const Color(0xFFEAF0FB),
+                    iconColor: const Color(0xFF537AB2),
+                    onTap: _isClassifying
+                        ? null
+                        : () => _selectAndClassify(ImageSource.gallery),
                   ),
                   if (_isClassifying) ...[
                     const SizedBox(height: 10),
@@ -464,7 +477,7 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
                         ),
                         SizedBox(width: 9),
                         Text(
-                          'En attente de la photo ou analyse OCR…',
+                          'Analyse de la photo importée…',
                           style: TextStyle(
                             color: Color(0xFF526870),
                             fontSize: 12,
@@ -473,32 +486,6 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
                       ],
                     ),
                   ],
-                  const SizedBox(height: 13),
-                  _AddMethodCard(
-                    icon: Icons.photo_camera_outlined,
-                    title: 'Photographier un document',
-                    subtitle:
-                        'Classification locale par reconnaissance de texte',
-                    badge: _isClassifying ? 'ANALYSE' : 'CAMÉRA',
-                    color: const Color(0xFFE3F2F0),
-                    iconColor: const Color(0xFF087E78),
-                    onTap: _isClassifying
-                        ? null
-                        : () => _selectAndClassify(ImageSource.camera),
-                  ),
-                  const SizedBox(height: 13),
-                  _AddMethodCard(
-                    icon: Icons.image_outlined,
-                    title: 'Importer une photo',
-                    subtitle:
-                        'JPEG ou PNG · 6 Mo · traitement sur cet appareil',
-                    badge: _isClassifying ? 'ANALYSE' : 'IMAGE',
-                    color: const Color(0xFFEAF0FB),
-                    iconColor: const Color(0xFF537AB2),
-                    onTap: _isClassifying
-                        ? null
-                        : () => _selectAndClassify(ImageSource.gallery),
-                  ),
                   const SizedBox(height: 13),
                   _AddMethodCard(
                     icon: Icons.edit_note_rounded,

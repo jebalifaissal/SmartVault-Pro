@@ -173,6 +173,11 @@ void _initializePushNotifications(String userId) {
         ),
 
       _Step.categoryChoice => DocumentCategorySelectionScreen(
+          onBack: () {
+            setState(() {
+              _step = _Step.welcome;
+            });
+          },
           onSelectSensitive: () {
             setState(() {
               _step = _Step.login;
@@ -189,7 +194,7 @@ void _initializePushNotifications(String userId) {
           authRepository: widget.authRepository,
           onBack: () {
             setState(() {
-              _step = _Step.categoryChoice;
+              _step = _Step.welcome;
             });
           },
           onRegister: () {

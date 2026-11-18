@@ -15,6 +15,7 @@ class VaultDocument {
     this.placeOfBirth,
     this.imageStoragePath,
     this.localImagePath,
+    this.localBackImagePath,
     this.isLocal = false,
     this.documentType,
     this.fullName,
@@ -54,6 +55,7 @@ class VaultDocument {
   final String? placeOfBirth;
   final String? imageStoragePath;
   final String? localImagePath;
+  final String? localBackImagePath;
   final bool isLocal;
   final String? documentType;
   final String? fullName;
@@ -73,6 +75,7 @@ class VaultDocument {
     String? holderName,
     String? imageStoragePath,
     String? localImagePath,
+    String? localBackImagePath,
     bool? isLocal,
     String? documentType,
     String? fullName,
@@ -103,6 +106,7 @@ class VaultDocument {
     placeOfBirth: placeOfBirth ?? this.placeOfBirth,
     imageStoragePath: imageStoragePath ?? this.imageStoragePath,
     localImagePath: localImagePath ?? this.localImagePath,
+    localBackImagePath: localBackImagePath ?? this.localBackImagePath,
     isLocal: isLocal ?? this.isLocal,
     documentType: documentType ?? this.documentType,
     fullName: fullName ?? this.fullName,
