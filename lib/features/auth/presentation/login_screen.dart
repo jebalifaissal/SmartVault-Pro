@@ -135,24 +135,30 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (widget.onBack != null) ...[
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        onPressed: widget.onBack,
-                        icon: const Icon(Icons.arrow_back_rounded),
-                        label: const Text('Retour à l’accueil'),
-                        style: TextButton.styleFrom(
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: SizedBox(
+                      height: 44,
+                      child: OutlinedButton.icon(
+                        onPressed: widget.onBack ??
+                            () => Navigator.of(context).maybePop(),
+                        icon: const Icon(Icons.arrow_back_rounded, size: 19),
+                        label: const Text(
+                          'Retour à l’accueil',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        style: OutlinedButton.styleFrom(
                           foregroundColor: _kTeal,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 8,
+                          side: const BorderSide(color: _kTeal),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                  ],
+                  ),
+                  const SizedBox(height: 12),
                   const _LoginHero(),
                   const SizedBox(height: 28),
                   const _PageTitle(),
