@@ -173,6 +173,11 @@ void _initializePushNotifications(String userId) {
         ),
 
       _Step.categoryChoice => DocumentCategorySelectionScreen(
+          onBack: () {
+            setState(() {
+              _step = _Step.welcome;
+            });
+          },
           onSelectSensitive: () {
             setState(() {
               _step = _Step.login;
