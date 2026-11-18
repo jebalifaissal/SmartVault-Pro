@@ -189,7 +189,7 @@ void _initializePushNotifications(String userId) {
           authRepository: widget.authRepository,
           onBack: () {
             setState(() {
-              _step = _Step.categoryChoice;
+              _step = _Step.welcome;
             });
           },
           onRegister: () {
