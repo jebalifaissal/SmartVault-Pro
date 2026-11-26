@@ -1410,8 +1410,11 @@ fetch('/api/shares/open', {
         "raw", new TextEncoder().encode(env.IMAGEKIT_PRIVATE_KEY),
         { name: "HMAC", hash: "SHA-1" }, false, ["sign"],
       );
+      // ImageKit signs the path relative to the URL endpoint.
+      // The leading slash belongs to the delivery URL, not the signature payload.
+      const signaturePath = imagePath.replace(/^\\/+/, "");
       const signatureBuffer = await crypto.subtle.sign(
-        "HMAC", key, new TextEncoder().encode(`${imagePath}${expiresAt}`),
+        "HMAC", key, new TextEncoder().encode(`${signaturePath}${expiresAt}`),
       );
       const signature = Array.from(new Uint8Array(signatureBuffer))
         .map((byte) => byte.toString(16).padStart(2, "0")).join("");
