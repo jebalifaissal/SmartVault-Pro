@@ -193,105 +193,18 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
     if (_isClassifying) return;
     setState(() => _isClassifying = true);
     try {
-      final selected = await SessionLockActivityScope.run(
-        context,
-        () =>
-            _picker.pickImage(source: source, maxWidth: 2400, imageQuality: 88),
-      );
-      if (selected == null || !mounted) return;
-
-      final mimeType = _imageMimeType(selected);
-      if (mimeType == null) {
-        _showMessage('Choisissez une image au format JPEG ou PNG.');
-        return;
-      }
-
-      final bytes = await selected.readAsBytes();
-      if (bytes.isEmpty) {
-        _showMessage('La photo est vide. Prenez une nouvelle photo.');
-        return;
-      }
-      if (bytes.length > _maxImageBytes) {
-        _showMessage('La photo doit peser au maximum 6 Mo.');
-        return;
-      }
-
-      DocumentType? selectedType;
-      try {
-        final classification = await widget.classifier.classify(selected.path);
-        if (!mounted) return;
-        final confirmed = await _confirmClassification(classification);
-        if (!mounted || confirmed == null) return;
-        selectedType = confirmed
-            ? classification.type
-            : await _chooseDocumentType();
-      } on PlatformException {
-        if (!mounted) return;
-        _showMessage(
-          'La reconnaissance du texte a échoué. Choisissez le type '
-          'manuellement pour continuer.',
-        );
-        selectedType = await _chooseDocumentType();
-      } on Exception {
-        if (!mounted) return;
-        _showMessage(
-          'La reconnaissance du texte est indisponible. Choisissez le type '
-          'manuellement pour continuer.',
-        );
-        selectedType = await _chooseDocumentType();
-      }
-
-      final documentType = selectedType;
-      if (!mounted || documentType == null) return;
-      final nationalId =
-          documentType == DocumentType.cin ||
-              documentType == DocumentType.passport
-          ? await _extractNationalId(selected.path, documentType)
-          : const NationalIdOcrResult();
-      if (!mounted) return;
-      final initialExpiryDate = DateTime.tryParse(
-        nationalId.expirationDate ?? '',
-      );
-      final document = await Navigator.of(context).push<VaultDocument>(
-        MaterialPageRoute<VaultDocument>(
-          builder: (_) => ReviewDocumentScreen(
-            onSave: widget.onSave,
-            initialCategory: documentType.vaultCategory,
-            initialTitle: documentType.suggestedTitle,
-            nationalIdFieldsEnabled:
-                documentType == DocumentType.cin ||
-                documentType == DocumentType.passport,
-            initialName: nationalId.firstName,
-            initialSurname: nationalId.lastName,
-            initialDateOfBirth: nationalId.dateOfBirth,
-            initialPlaceOfBirth: nationalId.placeOfBirth,
-            initialDocumentNumber: nationalId.documentNumber,
-            initialExpiryDate: initialExpiryDate,
-            imageBytes: bytes,
-            imageMimeType: mimeType,
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => CinCaptureScreen(
+            onSubmit: widget.onSubmitCinForReview,
+            nationalIdOcr: widget.nationalIdOcr,
+            startWithGallery: source == ImageSource.gallery,
           ),
         ),
       );
-      if (mounted && document != null) {
-        Navigator.of(context).pop(document);
-      }
-    } on PlatformException catch (error) {
-      if (mounted) {
-        _showMessage(
-          error.message ??
-              'Impossible d’ouvrir la caméra ou de sélectionner cette photo '
-                  '(erreur ${error.code}).',
-        );
-      }
-    } on FileSystemException {
-      if (mounted) {
-        _showMessage(
-          'La photo sélectionnée est illisible. Choisissez-en une autre.',
-        );
-      }
     } on Exception catch (error) {
       if (mounted) {
-        _showMessage('Impossible de préparer cette photo. ($error)');
+        _showMessage('Impossible d’ouvrir le dépôt du document : $error');
       }
     } finally {
       if (mounted) setState(() => _isClassifying = false);
@@ -457,8 +370,8 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
                     icon: Icons.image_outlined,
                     title: 'Importer une photo',
                     subtitle:
-                        'JPEG ou PNG · 6 Mo · reconnaissance locale du document',
-                    badge: _isClassifying ? 'ANALYSE' : 'IMAGE',
+                        'Choisissez une photo dans la galerie pour l’envoyer à l’administrateur et la faire classer.',
+                    badge: _isClassifying ? 'OUVERTURE' : 'POUR ADMIN',
                     color: const Color(0xFFEAF0FB),
                     iconColor: const Color(0xFF537AB2),
                     onTap: _isClassifying
