@@ -16,11 +16,13 @@ class CinCaptureScreen extends StatefulWidget {
   const CinCaptureScreen({
     required this.onSubmit,
     this.nationalIdOcr,
+    this.startWithGallery = false,
     super.key,
   });
 
   final SubmitClassificationRequest onSubmit;
   final NationalIdOcr? nationalIdOcr;
+  final bool startWithGallery;
 
   @override
   State<CinCaptureScreen> createState() => _CinCaptureScreenState();
@@ -44,6 +46,18 @@ class _CinCaptureScreenState extends State<CinCaptureScreen> {
   static const _line = Color(0xFFE2E8EB);
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.startWithGallery) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _pickImage(isFront: true, source: ImageSource.gallery);
+        }
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _titleController.dispose();
     _noteController.dispose();
@@ -64,6 +78,21 @@ class _CinCaptureScreenState extends State<CinCaptureScreen> {
 
       final bytes = await file.readAsBytes();
       if (!mounted) return;
+      if (bytes.isEmpty) {
+        _showSnackBar('Le fichier sélectionné est vide.');
+        return;
+      }
+      if (bytes.length > 6 * 1024 * 1024) {
+        _showSnackBar('La photo doit peser au maximum 6 Mo.');
+        return;
+      }
+      final lowerPath = file.path.toLowerCase();
+      if (!lowerPath.endsWith('.jpg') &&
+          !lowerPath.endsWith('.jpeg') &&
+          !lowerPath.endsWith('.png')) {
+        _showSnackBar('Choisissez une image au format JPEG ou PNG.');
+        return;
+      }
 
       setState(() {
         if (isFront) {
