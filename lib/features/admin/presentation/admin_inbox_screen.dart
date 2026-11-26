@@ -539,6 +539,8 @@ class _HistoryTab extends StatefulWidget {
 class _HistoryTabState extends State<_HistoryTab>
     with AutomaticKeepAliveClientMixin {
   late Future<List<Map<String, dynamic>>> _history;
+  bool _isDeletingAll = false;
+  final Set<String> _deletingIds = {};
 
   @override
   bool get wantKeepAlive => true;
@@ -551,6 +553,80 @@ class _HistoryTabState extends State<_HistoryTab>
 
   Future<List<Map<String, dynamic>>> _fetchHistory() async {
     return widget.api.getClassificationHistory();
+  }
+
+  Future<void> _reloadHistory() async {
+    final next = _fetchHistory();
+    setState(() => _history = next);
+    await next;
+  }
+
+  Future<bool> _confirmDelete({required bool all}) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(all ? 'Vider tout l’historique ?' : 'Supprimer ce message ?'),
+        content: Text(
+          all
+              ? 'Cette action supprimera toutes les entrées de l’historique Admin. Les documents et les comptes ne seront pas supprimés.'
+              : 'Cette entrée sera supprimée définitivement de l’historique Admin.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: _highAccent),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  Future<void> _deleteEntry(String id) async {
+    if (id.isEmpty || _deletingIds.contains(id)) return;
+    if (!await _confirmDelete(all: false) || !mounted) return;
+    setState(() => _deletingIds.add(id));
+    try {
+      await widget.api.deleteClassificationHistoryEntry(id);
+      await _reloadHistory();
+      if (mounted) _showHistoryMessage('Message supprimé.');
+    } catch (error) {
+      if (mounted) _showHistoryMessage('Suppression impossible : $error', isError: true);
+    } finally {
+      if (mounted) setState(() => _deletingIds.remove(id));
+    }
+  }
+
+  Future<void> _deleteAll() async {
+    if (_isDeletingAll) return;
+    if (!await _confirmDelete(all: true) || !mounted) return;
+    setState(() => _isDeletingAll = true);
+    try {
+      await widget.api.clearClassificationHistory();
+      await _reloadHistory();
+      if (mounted) _showHistoryMessage('Historique vidé.');
+    } catch (error) {
+      if (mounted) _showHistoryMessage('Suppression impossible : $error', isError: true);
+    } finally {
+      if (mounted) setState(() => _isDeletingAll = false);
+    }
+  }
+
+  void _showHistoryMessage(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: isError ? _highAccent : _teal,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 
   @override
@@ -580,75 +656,128 @@ class _HistoryTabState extends State<_HistoryTab>
         if (items.isEmpty) {
           return const Center(
             child: Text(
-              'Aucune action dans l\u2019historique.',
+              'Aucune action dans l’historique.',
               style: TextStyle(color: _muted),
             ),
           );
         }
-        return ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: items.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 8),
-          itemBuilder: (context, index) {
-            final item = items[index];
-            final action = item['action'] as String? ?? '';
-            final isAccepted = action == 'ADMIN_REVIEWED';
-            return Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: _white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: _border),
-              ),
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: Row(
                 children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color:
-                          isAccepted
-                              ? _teal.withValues(alpha: 0.10)
-                              : _highBg,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      isAccepted
-                          ? Icons.check_circle_outline_rounded
-                          : Icons.cancel_outlined,
-                      color: isAccepted ? _teal : _highAccent,
-                      size: 19,
+                  Expanded(
+                    child: Text(
+                      '${items.length} message(s)',
+                      style: const TextStyle(
+                        color: _muted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isAccepted ? 'Dossier accepté' : 'Dossier refusé',
-                          style: TextStyle(
-                            color: isAccepted ? _teal : _highAccent,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        Text(
-                          item['details'] as String? ?? '',
-                          style: const TextStyle(
-                            color: _muted,
-                            fontSize: 12,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
+                  TextButton.icon(
+                    onPressed: _isDeletingAll ? null : _deleteAll,
+                    icon: _isDeletingAll
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.delete_sweep_outlined, size: 18),
+                    label: const Text('Tout supprimer'),
+                    style: TextButton.styleFrom(foregroundColor: _highAccent),
                   ),
                 ],
               ),
-            );
-          },
+            ),
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                itemCount: items.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  final id = item['id']?.toString() ?? '';
+                  final action = item['action'] as String? ?? '';
+                  final isAccepted = action == 'ADMIN_REVIEWED';
+                  final isDeleting = _deletingIds.contains(id);
+                  return Container(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+                    decoration: BoxDecoration(
+                      color: _white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: _border),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: isAccepted
+                                ? _teal.withValues(alpha: 0.10)
+                                : _highBg,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            isAccepted
+                                ? Icons.check_circle_outline_rounded
+                                : Icons.cancel_outlined,
+                            color: isAccepted ? _teal : _highAccent,
+                            size: 19,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                isAccepted ? 'Dossier accepté' : 'Dossier refusé',
+                                style: TextStyle(
+                                  color: isAccepted ? _teal : _highAccent,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Text(
+                                item['details'] as String? ?? '',
+                                style: const TextStyle(
+                                  color: _muted,
+                                  fontSize: 12,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Supprimer ce message',
+                          onPressed: isDeleting || id.isEmpty
+                              ? null
+                              : () => _deleteEntry(id),
+                          icon: isDeleting
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: _highAccent,
+                                  size: 21,
+                                ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         );
       },
     );
