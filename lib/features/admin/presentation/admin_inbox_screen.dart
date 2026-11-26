@@ -559,7 +559,9 @@ class _HistoryTabState extends State<_HistoryTab>
     if (!mounted) return;
     // Le rechargement est indépendant de la suppression :
     // une erreur GET ne doit pas transformer une suppression réussie en échec.
-    setState(() => _history = _fetchHistory());
+    setState(() {
+      _history = _fetchHistory();
+    });
   }
 
   Future<bool> _confirmDelete({required bool all}) async {
