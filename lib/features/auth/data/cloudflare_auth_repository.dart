@@ -24,13 +24,14 @@ class CloudflareAuthRepository implements AuthRepository {
   final String _baseUrl;
   final StreamController<AuthUser?> _authChanges =
       StreamController<AuthUser?>.broadcast();
-  Future<AuthUser?>? _initialSession;
-
   @override
-  late final Stream<AuthUser?> authStateChanges = _watchAuthChanges();
+  Stream<AuthUser?> get authStateChanges => _watchAuthChanges();
 
+  // Chaque StreamBuilder reçoit son propre flux d'écoute.
+  // Le flux source _authChanges reste broadcast et peut notifier
+  // plusieurs abonnés (ex. après une déconnexion Admin).
   Stream<AuthUser?> _watchAuthChanges() async* {
-    yield await (_initialSession ??= _restoreSession());
+    yield await _restoreSession();
     yield* _authChanges.stream;
   }
 
