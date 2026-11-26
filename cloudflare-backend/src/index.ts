@@ -1377,15 +1377,15 @@ fetch('/api/shares/open', {
 
     // Older requests may store either ImageKit's filePath or a complete URL.
     // Normalize both formats to a path belonging to this configured endpoint.
-    const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\\/+$/, "");
+    const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\/+$/, "");
     let imagePath: string | null = null;
     if (storedImageKey.startsWith("/")) {
       imagePath = storedImageKey;
-    } else if (/^https?:\\/\\//i.test(storedImageKey)) {
+    } else if (/^https?:\/\//i.test(storedImageKey)) {
       try {
         const storedUrl = new URL(storedImageKey);
         const endpointUrl = new URL(endpoint);
-        const endpointPath = endpointUrl.pathname.replace(/\\/+$/, "");
+        const endpointPath = endpointUrl.pathname.replace(/\/+$/, "");
         if (
           storedUrl.origin === endpointUrl.origin &&
           storedUrl.pathname.startsWith(`${endpointPath}/`)
@@ -1395,8 +1395,8 @@ fetch('/api/shares/open', {
       } catch {
         imagePath = null;
       }
-    } else if (!storedImageKey.includes("..") && !storedImageKey.includes("\\\\")) {
-      imagePath = `/${storedImageKey.replace(/^\\/+/, "")}`;
+    } else if (!storedImageKey.includes("..") && !storedImageKey.includes("\\")) {
+      imagePath = `/${storedImageKey.replace(/^\/+/, "")}`;
     }
 
     if (!imagePath ||
