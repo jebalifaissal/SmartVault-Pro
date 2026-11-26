@@ -1353,7 +1353,12 @@ fetch('/api/shares/open', {
     }
 
     const suffix = isBackPhoto ? "/back-photo" : "/photo";
-    const requestId = path.slice(photoPfx.length, -suffix.length);
+    let requestId: string;
+    try {
+      requestId = decodeURIComponent(path.slice(photoPfx.length, -suffix.length));
+    } catch {
+      return json({ success: false, error: "Invalid request ID" }, 400);
+    }
     if (!requestId || requestId.includes("/")) {
       return json({ success: false, error: "Invalid request ID" }, 400);
     }
@@ -1365,11 +1370,37 @@ fetch('/api/shares/open', {
       .bind(requestId)
       .first<{ image_key: string | null; image_mime_type: string | null }>();
 
-    if (!record || !record.image_key) {
+    const storedImageKey = record?.image_key?.trim() ?? "";
+    if (!storedImageKey) {
       return json({ success: false, error: "Classification photo not found" }, 404);
     }
-    if (!record.image_key.startsWith("/") ||
-        (record.image_mime_type !== "image/jpeg" && record.image_mime_type !== "image/png")) {
+
+    // Older requests may store either ImageKit's filePath or a complete URL.
+    // Normalize both formats to a path belonging to this configured endpoint.
+    const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\\/+$/, "");
+    let imagePath: string | null = null;
+    if (storedImageKey.startsWith("/")) {
+      imagePath = storedImageKey;
+    } else if (/^https?:\\/\\//i.test(storedImageKey)) {
+      try {
+        const storedUrl = new URL(storedImageKey);
+        const endpointUrl = new URL(endpoint);
+        const endpointPath = endpointUrl.pathname.replace(/\\/+$/, "");
+        if (
+          storedUrl.origin === endpointUrl.origin &&
+          storedUrl.pathname.startsWith(`${endpointPath}/`)
+        ) {
+          imagePath = storedUrl.pathname.slice(endpointPath.length);
+        }
+      } catch {
+        imagePath = null;
+      }
+    } else if (!storedImageKey.includes("..") && !storedImageKey.includes("\\\\")) {
+      imagePath = `/${storedImageKey.replace(/^\\/+/, "")}`;
+    }
+
+    if (!imagePath ||
+        (record?.image_mime_type !== "image/jpeg" && record?.image_mime_type !== "image/png")) {
       return json({ success: false, error: "Invalid stored image information" }, 500);
     }
 
@@ -1380,15 +1411,23 @@ fetch('/api/shares/open', {
         { name: "HMAC", hash: "SHA-1" }, false, ["sign"],
       );
       const signatureBuffer = await crypto.subtle.sign(
-        "HMAC", key, new TextEncoder().encode(`${record.image_key}${expiresAt}`),
+        "HMAC", key, new TextEncoder().encode(`${imagePath}${expiresAt}`),
       );
       const signature = Array.from(new Uint8Array(signatureBuffer))
         .map((byte) => byte.toString(16).padStart(2, "0")).join("");
-      const endpoint = env.IMAGEKIT_URL_ENDPOINT.replace(/\/+$/, "");
-      const imageUrl = `${endpoint}${record.image_key}?ik-t=${expiresAt}&ik-s=${signature}`;
+      const imageUrl = `${endpoint}${imagePath}?ik-t=${expiresAt}&ik-s=${signature}`;
       const imageResponse = await fetch(imageUrl);
       if (!imageResponse.ok) {
-        return json({ success: false, error: "Unable to retrieve image from ImageKit" }, 502);
+        console.error("Classification image delivery failed:", {
+          requestId,
+          side: isBackPhoto ? "back" : "front",
+          status: imageResponse.status,
+        });
+        return json({
+          success: false,
+          error: "Unable to retrieve image from ImageKit",
+          upstream_status: imageResponse.status,
+        }, 502);
       }
       return new Response(imageResponse.body, {
         status: 200,
