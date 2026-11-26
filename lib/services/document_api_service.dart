@@ -416,6 +416,28 @@ Future<void> submitClassificationRequest({
         .toList(growable: false);
   }
 
+  /// Supprime une seule entrée du journal admin.
+  Future<void> deleteClassificationHistoryEntry(String id) async {
+    _decodeResponse(
+      await _client.delete(
+        Uri.parse('$_baseUrl/api/admin/classification-history/${Uri.encodeComponent(id)}'),
+        headers: await _authenticatedHeaders(),
+      ),
+      expectedStatusCode: 200,
+    );
+  }
+
+  /// Vide uniquement le journal admin, sans supprimer les documents.
+  Future<void> clearClassificationHistory() async {
+    _decodeResponse(
+      await _client.delete(
+        Uri.parse('$_baseUrl/api/admin/classification-history'),
+        headers: await _authenticatedHeaders(),
+      ),
+      expectedStatusCode: 200,
+    );
+  }
+
   List<ClassificationRequest> _parseRequests(Object? value) {
     if (value is! List) {
       throw const FormatException(
