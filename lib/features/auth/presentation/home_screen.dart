@@ -563,10 +563,10 @@ class _HomeScreenState extends State<HomeScreen> {
           id: 'decision-$id',
           type: accepted ? 'document_accepted' : 'document_rejected',
           title: accepted
-              ? 'Document accepté : $title'
+              ? 'Document accepté'
               : 'Document refusé : $title',
           body: accepted
-              ? 'Votre document a été classifié${category == null ? '' : ' dans « $category »'}${level == null ? '.' : ' (niveau $level).'}'
+              ? 'Votre document a été accepté. Il a été soumis pour analyse.'
               : 'Votre demande a été refusée.${reason == null || reason.isEmpty ? '' : ' Motif : $reason'}',
           requestId: id,
           isRead: false,
