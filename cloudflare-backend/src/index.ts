@@ -1313,6 +1313,31 @@ fetch('/api/shares/open', {
         return json({ success: true, history: result.results });
       }
 
+      if (path === "/api/admin/classification-history" && request.method === "DELETE") {
+        const adm = await authenticatedAdmin(request, env);
+        if (!adm) return json({ success: false, error: "Admin authentication required" }, 401);
+        await env.smartvault_db.prepare("DELETE FROM admin_logs").run();
+        return json({ success: true, message: "Admin history cleared" });
+      }
+
+      const historyDeletePrefix = "/api/admin/classification-history/";
+      if (path.startsWith(historyDeletePrefix) && request.method === "DELETE") {
+        const adm = await authenticatedAdmin(request, env);
+        if (!adm) return json({ success: false, error: "Admin authentication required" }, 401);
+        const logId = decodeURIComponent(path.slice(historyDeletePrefix.length));
+        if (!logId || logId.includes("/")) {
+          return json({ success: false, error: "Invalid history entry ID" }, 400);
+        }
+        const result = await env.smartvault_db
+          .prepare("DELETE FROM admin_logs WHERE id = ?")
+          .bind(logId)
+          .run();
+        if ((result.meta?.changes ?? 0) === 0) {
+          return json({ success: false, error: "History entry not found" }, 404);
+        }
+        return json({ success: true, message: "History entry deleted" });
+      }
+
 
 {
   const photoPfx = "/api/admin/classification-requests/";
