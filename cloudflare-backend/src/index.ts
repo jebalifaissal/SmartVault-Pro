@@ -1499,9 +1499,9 @@ fetch('/api/shares/open', {
             )
             .run();
           // Notification utilisateur
-          const notifTitle = accepted ? `✅ Document accepté : ${reqRow.title}` : `❌ Document refusé : ${reqRow.title}`;
+          const notifTitle = accepted ? "Document accepté" : `❌ Document refusé : ${reqRow.title}`;
           const notifBody = accepted
-            ? `Votre document a été classifié « ${category} » (niveau ${level === "HIGH" ? "Très sensible" : "Moyennement sensible"}).`
+            ? "Votre document a été accepté. Il a été soumis pour analyse."
             : `Votre demande a été refusée.${rejReason ? ` Motif : ${rejReason}` : ""}`;
           await env.smartvault_db
             .prepare(`INSERT INTO user_notifications
