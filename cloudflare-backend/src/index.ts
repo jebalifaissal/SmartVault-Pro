@@ -1412,7 +1412,7 @@ fetch('/api/shares/open', {
       );
       // ImageKit signs the path relative to the URL endpoint.
       // The leading slash belongs to the delivery URL, not the signature payload.
-      const signaturePath = imagePath.replace(/^\\/+/, "");
+      const signaturePath = imagePath.replace(/^\/+/, "");
       const signatureBuffer = await crypto.subtle.sign(
         "HMAC", key, new TextEncoder().encode(`${signaturePath}${expiresAt}`),
       );
