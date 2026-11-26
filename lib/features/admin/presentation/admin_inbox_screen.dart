@@ -846,8 +846,33 @@ class _DecisionSheetState extends State<_DecisionSheet> {
             if (snapshot.hasError) {
               return Container(
                 height: 100,
-                decoration: BoxDecoration(color: _bg, borderRadius: BorderRadius.circular(12), border: Border.all(color: _border)),
-                child: const Center(child: Text('Photo non disponible', style: TextStyle(color: _muted, fontSize: 12))),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _bg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _border),
+                ),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.broken_image_outlined, color: _muted),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Photo non disponible',
+                        style: TextStyle(color: _muted, fontSize: 12),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        snapshot.error.toString(),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: _muted, fontSize: 10),
+                      ),
+                    ],
+                  ),
+                ),
               );
             }
             if (!snapshot.hasData) {
@@ -861,7 +886,20 @@ class _DecisionSheetState extends State<_DecisionSheet> {
               borderRadius: BorderRadius.circular(12),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 280),
-                child: Image.memory(snapshot.data!, fit: BoxFit.contain),
+                child: Image.memory(
+                  snapshot.data!,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    height: 100,
+                    color: _bg,
+                    alignment: Alignment.center,
+                    child: const Text(
+                      'Format de photo invalide ou fichier endommagé',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: _muted, fontSize: 12),
+                    ),
+                  ),
+                ),
               ),
             );
           },
