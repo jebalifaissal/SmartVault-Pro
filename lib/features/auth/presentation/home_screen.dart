@@ -837,6 +837,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final decisionNotifications = _notifications
+        .where((notification) =>
+            notification.isAccepted || notification.isRejected)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
     return Scaffold(
       backgroundColor: _canvas,
       body: SafeArea(
@@ -845,10 +851,12 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             if (_isLoadingDocuments || _documentLoadError != null)
               _buildDocumentSyncStatus(),
-            // ── Bannière notifications non lues ───────────────────────────
-            if (!_notifBannerDismissed && _notifications.any((n) => !n.isRead))
+            // ── Dernière décision Admin : visible dès l'ouverture du compte ──
+            // Même si elle a déjà été lue, la dernière décision reste visible
+            // à chaque nouvelle ouverture de l'espace utilisateur.
+            if (!_notifBannerDismissed && decisionNotifications.isNotEmpty)
               _NotificationBanner(
-                notifications: _notifications.where((n) => !n.isRead).toList(),
+                notifications: [decisionNotifications.first],
                 onDismiss: _dismissNotificationBanner,
                 onViewWallet: _openWallet,
               ),
